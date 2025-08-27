@@ -31,7 +31,8 @@ class GaitCommand(CommandTerm):
 
         # create buffers to store the command
         # command format: [frequency, phase offset, contact duration]
-        self.gait_command = torch.zeros(self.num_envs, 3, device=self.device)
+        self.gait_command = torch.zeros(self.num_envs, 4, device=self.device)
+        # self.gait_command = torch.zeros(self.num_envs, 3, device=self.device)
         # create metrics dictionary for logging
         self.metrics = {}
 
@@ -64,6 +65,8 @@ class GaitCommand(CommandTerm):
         self.gait_command[env_ids, 1] = r.uniform_(*self.cfg.ranges.offsets)
         # -- contact duration
         self.gait_command[env_ids, 2] = r.uniform_(*self.cfg.ranges.durations)
+        # -- swing height
+        self.gait_command[env_ids, 3] = r.uniform_(*self.cfg.ranges.swing_height)
 
     def _update_command(self):
         """Update the command. No additional processing needed in this implementation."""

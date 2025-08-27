@@ -41,8 +41,8 @@ class PFPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 @configclass
 class PF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 10000
-    save_interval = 500
+    max_iterations = 2000
+    save_interval = 200
     experiment_name = "pf_tron_1a_flat"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(

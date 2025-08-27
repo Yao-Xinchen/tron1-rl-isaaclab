@@ -89,6 +89,7 @@ class CommandCfg(BaseCommandsCfg):
             frequencies=(1.5, 2.5),  # Gait frequency range [Hz]
             offsets=(0.5, 0.5),  # Phase offset range [0-1]
             durations=(0.5, 0.5),  # Contact duration range [0-1]
+            swing_height=(0.1, 0.2) # foot swing height
         ),
     )
 
@@ -101,7 +102,7 @@ class CommandCfg(BaseCommandsCfg):
         self.base_velocity.rel_standing_envs = 0.2
         self.base_velocity.rel_heading_envs = 0.0
         self.base_velocity.ranges = mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.6, 0.6), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.5, 0.5), heading=(-math.pi, math.pi)
+            lin_vel_x=(-1.5, 1.5), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-0.5, 0.5), heading=(-math.pi, math.pi)
         )
 
 

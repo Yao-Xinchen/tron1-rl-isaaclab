@@ -91,6 +91,7 @@ class CommandsCfg:
             frequencies=(0.8, 1.6), # (1.5, 2.5),  # Gait frequency range [Hz]
             offsets=(0.5, 0.5),  # Phase offset range [0-1]
             durations=(0.5, 0.5),  # Contact duration range [0-1]
+            swing_height=(0.1, 0.2)
         ),
     )
 
@@ -115,7 +116,7 @@ class ActionsCfg:
     joint_pos = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[".*"],
-        scale=0.5,
+        scale=0.25,
         use_default_offset=True,
     )
 

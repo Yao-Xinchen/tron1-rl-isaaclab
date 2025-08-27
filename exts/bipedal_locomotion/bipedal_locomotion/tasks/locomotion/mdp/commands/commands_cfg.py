@@ -23,6 +23,8 @@ class UniformGaitCommandCfg(CommandTermCfg):
         """Range for phase offsets [0-1]."""
         durations: tuple[float, float] = MISSING
         """Range for contact durations [0-1]."""
+        swing_height: tuple[float, float] = MISSING
+        """Range for contact durations [0-1]."""
 
     ranges: Ranges = MISSING
     """Distribution ranges for the gait parameters."""
