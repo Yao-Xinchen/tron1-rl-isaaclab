@@ -63,6 +63,7 @@ class PPO:
         early_stop=False,
         anneal_lr=False,
         device="cpu",
+        **kwargs,
     ):
         self.device = device
         self.num_group = num_group
