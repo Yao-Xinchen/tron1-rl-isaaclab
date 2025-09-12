@@ -19,6 +19,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as GaussianNoise
 
 from bipedal_locomotion.tasks.locomotion import mdp
+from bipedal_locomotion.tasks.locomotion.cfg.WF.terrains_cfg import BLIND_ROUGH_TERRAINS_CFG
 
 ##################
 # Scene Definition
@@ -32,9 +33,9 @@ class WFSceneCfg(InteractiveSceneCfg):
     # terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",
-        terrain_generator=None,
-        max_init_terrain_level=0,
+        terrain_type="generator",
+        terrain_generator=BLIND_ROUGH_TERRAINS_CFG,
+        max_init_terrain_level=5,
         collision_group=-1,
         physics_material=RigidBodyMaterialCfg(
             friction_combine_mode="multiply",

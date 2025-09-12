@@ -133,7 +133,7 @@ def nominal_foot_position(env: ManagerBasedRLEnv, command_name: str,
     base_quat = asset.data.root_link_quat_w.unsqueeze(1).expand(-1, 2, -1)
     # assert (compute_rotation_distance(asset.data.root_com_quat_w, asset.data.root_link_quat_w) < 0.1).all()
     base_pos = asset.data.root_link_state_w[:, :3].unsqueeze(1).expand(-1, 2, -1)
-    feet_pos_b = math_utils.quat_rotate_inverse(
+    feet_pos_b = math_utils.quat_apply_inverse(
         base_quat,
         feet_pos_w - base_pos,
     )
@@ -153,7 +153,7 @@ def leg_symmetry(env: ManagerBasedRLEnv,
     base_quat = asset.data.root_link_quat_w.unsqueeze(1).expand(-1, 2, -1)
     # assert (compute_rotation_distance(asset.data.root_com_quat_w, asset.data.root_link_quat_w) < 0.1).all()
     base_pos = asset.data.root_link_state_w[:, :3].unsqueeze(1).expand(-1, 2, -1)
-    feet_pos_b = math_utils.quat_rotate_inverse(
+    feet_pos_b = math_utils.quat_apply_inverse(
         base_quat,
         feet_pos_w - base_pos,
     )
@@ -170,7 +170,7 @@ def same_feet_x_position(env: ManagerBasedRLEnv,
     base_quat = asset.data.root_link_quat_w.unsqueeze(1).expand(-1, 2, -1)
     # assert (compute_rotation_distance(asset.data.root_com_quat_w, asset.data.root_link_quat_w) < 0.1).all()
     base_pos = asset.data.root_link_state_w[:, :3].unsqueeze(1).expand(-1, 2, -1)
-    feet_pos_b = math_utils.quat_rotate_inverse(
+    feet_pos_b = math_utils.quat_apply_inverse(
         base_quat,
         feet_pos_w - base_pos,
     )
