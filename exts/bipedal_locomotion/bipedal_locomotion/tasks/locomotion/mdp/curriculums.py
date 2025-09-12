@@ -4,6 +4,8 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from exts.bipedal_locomotion.bipedal_locomotion.tasks.locomotion import mdp
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
     from isaaclab.managers import SceneEntityCfg
@@ -67,3 +69,39 @@ def disable_termination(
         env.termination_manager.set_term_cfg(term_name, term_cfg)
         return torch.ones(1)
     return torch.zeros(1)
+
+
+def velocity_commands_ranges_level(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    max_range: dict[str, tuple[float, float]],
+    update_interval: int = 50 * 24,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "base_twist",
+) -> torch.Tensor:
+    """Curriculum that progressively increases velocity command ranges.
+
+    Returns:
+        The current maximum velocity range.
+    """
+    # extract the used quantities (to enable type-hinting)
+    command_cfg: mdp.UniformVelocityCommandCfg = env.command_manager.get_term(command_name).cfg
+    current_vx = command_cfg.ranges.lin_vel_x[1]
+    
+    if env.common_step_counter % update_interval == 0:
+        new_vx = command_cfg.ranges.lin_vel_x[1] + 0.1  # Increase by 0.1 m/s
+        new_vy = command_cfg.ranges.lin_vel_y[1] + 0.04  # Increase by 0.04 m/s
+        new_wz = command_cfg.ranges.ang_vel_z[1] + 0.1   # Increase by 0.1 rad/s
+        
+        # Clamp to maximum ranges
+        new_vx = min(new_vx, max_range["lin_vel_x"][1])
+        new_vy = min(new_vy, max_range["lin_vel_y"][1])
+        new_wz = min(new_wz, max_range["ang_vel_z"][1])
+        
+        # Update ranges symmetrically
+        command_cfg.ranges.lin_vel_x = (-new_vx, new_vx)
+        command_cfg.ranges.lin_vel_y = (-new_vy, new_vy)
+        command_cfg.ranges.ang_vel_z = (-new_wz, new_wz)
+        current_vx = new_vx
+
+    return torch.ones(1, dtype=torch.float) * current_vx

@@ -12,10 +12,53 @@ def prepare_quantity_for_tron(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    foot_radius = 0.127,
 ):
+    """Compute the nominal foot position in the body frame.
+
+    This function computes the nominal foot position in the body frame. This funciton is only suitable for LIMX W1 robot
+
+    The computed nominal foot position is stored in the attribute ``env._nominal_foot_position_b`` of the asset.
+    """
+    # extract the used quantities (to enable type-hinting)
+    
     asset: Articulation = env.scene[asset_cfg.name]
-    env._foot_radius = foot_radius
+
+    wheel_link_idx, _ = asset.find_bodies("wheel_[RL]_Link")
+
+    wheel_joint_ids, _ = asset.find_joints("wheel_[RL]_Joint")
+
+    base_idx, _ = asset.find_bodies("base_Link")
+
+    # hip_idx, _ = asset.find_bodies(".*_thigh")
+
+    wheels_pos_w = asset.data.body_pos_w[:, wheel_link_idx, :]
+
+    base_pos_w = asset.data.body_pos_w[:, base_idx, :]
+
+    # hip_pos_w = asset.data.body_pos_w[:, hip_idx, :]
+
+    base_quat = asset.data.body_quat_w[:, base_idx, :]
+
+    nominal_foot_position_b = torch.zeros(len(wheel_link_idx), 3, device=asset.device)
+    # wheels_pos_b = torch.zeros(asset.num_instances, len(wheel_idx), 3, device=asset.device)
+
+    for j in range(asset.num_instances):
+        if torch.any(asset.data.joint_pos[j, :] > 5e-2):
+            continue
+        for i in range(len(wheel_link_idx)):
+            nominal_foot_position_b[i, :] = math_utils.quat_apply_inverse(
+                base_quat[j, 0, :], wheels_pos_w[j, i, :] - base_pos_w[j, 0, :]
+            )
+            # nominal_foot_position_b[i, 1] = math_utils.quat_apply_inverse(
+            #     base_quat[j, 0, :], wheels_pos_w[j, i, :] - base_pos_w[j, 0, :]
+            # )[1]
+        break
+    assert (nominal_foot_position_b != 0.0).any()
+    
+    env._nominal_foot_position_b = nominal_foot_position_b # type: ignore
+    env._wheels_link_ids = wheel_link_idx                  # type: ignore
+    env._wheels_joint_ids = wheel_joint_ids                # type: ignore
+    env._foot_radius = 0.127                               # type: ignore
 
 def apply_external_force_torque_stochastic(
     env: ManagerBasedEnv,

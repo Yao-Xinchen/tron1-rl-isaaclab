@@ -37,30 +37,20 @@ WHEELFOOT_CFG = ArticulationCfg(
     soft_joint_pos_limit_factor=0.9,
     actuators={
         "legs": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "abad_L_Joint",
-                "abad_R_Joint",
-                "hip_L_Joint",
-                "hip_R_Joint",
-                "knee_L_Joint",
-                "knee_R_Joint",
-            ],
+            joint_names_expr=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"],
             effort_limit=80.0,
-            velocity_limit=15.0,
+            velocity_limit=20.0,
             stiffness=40.0,
-            damping=2.5,
-            friction=0.0,
+            damping=1.8,
+            friction=0.0
         ),
         "wheels": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "wheel_L_Joint",
-                "wheel_R_Joint",
-            ],
-            effort_limit=80.0,
-            velocity_limit=15.0,
+            joint_names_expr=["wheel_[RL]_Joint"],
+            effort_limit=40.0,
+            velocity_limit=40.0,
             stiffness=0.0,
-            damping=0.8,
-            friction=0.0,
-        ), # TODO: change to delayed implicit actuator
+            damping=0.5,
+            friction=0.33
+        ),
     },
 )
