@@ -4,11 +4,10 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from exts.bipedal_locomotion.bipedal_locomotion.tasks.locomotion import mdp
+from bipedal_locomotion.tasks.locomotion import mdp
 
-if TYPE_CHECKING:
-    from isaaclab.envs import ManagerBasedRLEnv
-    from isaaclab.managers import SceneEntityCfg
+from isaaclab.envs import ManagerBasedRLEnv
+from isaaclab.managers import SceneEntityCfg
 
 
 def modify_event_parameter(

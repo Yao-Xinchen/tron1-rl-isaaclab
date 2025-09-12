@@ -478,38 +478,27 @@ class GaitReward(ManagerTermBase):
         return (reward / velocities.shape[1]) * self.vel_scale
 
 
-class ActionSmoothnessPenalty(ManagerTermBase):
+class ActionSmoothnessPenaltyWrapper:
     """
-    A reward term for penalizing large instantaneous changes in the network action output.
-    This penalty encourages smoother actions over time.
+    A wrapper class for calculating action smoothness penalty.
+
+    The main purposes of this wrapper are:
+    1. To maintain state across multiple calls (prev_action and prev_prev_action).
+    2. To calculate a smoothness penalty based on the current, previous, and
+       two-steps-ago actions.
+    3. To provide a serializable interface compatible with IsaacLab's YAML
+       configuration system.
     """
 
-    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
-        """Initialize the term.
-
-        Args:
-            cfg: The configuration of the reward term.
-            env: The RL environment instance.
-        """
-        super().__init__(cfg, env)
-        self.dt = env.step_dt
+    def __init__(self):
         self.prev_prev_action = None
         self.prev_action = None
-        # self.__name__ = "action_smoothness_penalty"
+        self.__name__ = "action_smoothness_penalty"
 
     def __call__(self, env: ManagerBasedRLEnv) -> torch.Tensor:
-        """Compute the action smoothness penalty.
-
-        Args:
-            env: The RL environment instance.
-
-        Returns:
-            The penalty value based on the action smoothness.
-        """
-        # Get the current action from the environment's action manager
+        """Penalize large instantaneous changes in the network action output"""
         current_action = env.action_manager.action.clone()
 
-        # If this is the first call, initialize the previous actions
         if self.prev_action is None:
             self.prev_action = current_action
             return torch.zeros(current_action.shape[0], device=current_action.device)
@@ -519,16 +508,197 @@ class ActionSmoothnessPenalty(ManagerTermBase):
             self.prev_action = current_action
             return torch.zeros(current_action.shape[0], device=current_action.device)
 
-        # Compute the smoothness penalty
         penalty = torch.sum(torch.square(current_action - 2 * self.prev_action + self.prev_prev_action), dim=1)
 
-        # Update the previous actions for the next call
+        # Update actions for next call
         self.prev_prev_action = self.prev_action
         self.prev_action = current_action
 
-        # Apply a condition to ignore penalty during the first few episodes
-        startup_env_mask = env.episode_length_buf < 3
-        penalty[startup_env_mask] = 0
+        startup_env_musk = env.episode_length_buf < 3
+        penalty[startup_env_musk] = 0
 
-        # Return the penalty scaled by the configured weight
         return penalty
+
+action_smoothness_penalty = ActionSmoothnessPenaltyWrapper()
+
+
+def safety_reward_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    base_height_target: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward safety of EE position commands using exponential kernel."""
+    # extract the used quantities (to enable type-hinting)
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+
+    # prepare variable
+    # wheels_ids, _ = asset.find_bodies(".*_wheel")
+    base_quat = asset.data.root_link_quat_w.unsqueeze(1).expand(-1, 2, -1)
+    base_position = asset.data.root_link_pos_w.unsqueeze(1).expand(-1, 2, -1)
+
+    # check if root_state equal
+    # if asset.data.root_quat_w != base_quat:
+    #     raise ValueError("Root state is not equal to base state")
+
+    """Compute the final error"""
+    # compute the nominal foot error
+    foot_position = asset.data.body_pos_w[:, env._wheels_link_ids, :]
+    foot_position_b = math_utils.quat_apply_inverse(base_quat, foot_position - base_position)
+    # base_height = -foot_position_b[:, :, 2].mean(dim=-1) + env._foot_radius
+    # base_height = asset.data.root_link_pos_w[:, 2]
+    base_height = asset.data.root_link_pos_w[:, 2] - foot_position[:, :, 2].mean(dim=-1) + env._foot_radius
+
+    foot_pos_error_b = foot_position_b[:, :, :2] - env._nominal_foot_position_b[:, :2]
+    # inner eight condition
+    inner_eight_condition = ((env._nominal_foot_position_b[:, 1] > 0.0) * (foot_pos_error_b[:, :, 1] < 0.0)) | (
+        (env._nominal_foot_position_b[:, 1] < 0.0) * (foot_pos_error_b[:, :, 1] > 0.0)
+    )
+
+    foot_pos_error_b[:, :, 1] = torch.where(
+        inner_eight_condition, foot_pos_error_b[:, :, 1] / 0.1, foot_pos_error_b[:, :, 1] / 0.2
+    )
+    foot_pos_error_b[:, :, 0] = foot_pos_error_b[:, :, 0] / 0.2
+
+    foot_pos_error_b = torch.sum(torch.sum(foot_pos_error_b.abs(), dim=-1), dim=-1)
+    foot_pos_error_b = torch.clamp(foot_pos_error_b, max=8.0)
+    # compute base error
+    base_orient_error_roll = torch.abs(asset.data.projected_gravity_b[:, 1]) / 0.1
+    base_orient_error_pitch = torch.abs(asset.data.projected_gravity_b[:, 0]) / 0.85
+    base_height_error = torch.abs((base_height - base_height_target)) / 0.2  # not used
+
+    # body velocity penalty
+    wheel_vel_error = (torch.sum(torch.abs(asset.data.joint_vel[:, env._wheels_joint_ids]), dim=1) / 3.0).clip(max=4)
+    base_lin_vel_error = torch.norm(asset.data.root_link_lin_vel_b, p=2, dim=1) / 0.5
+    base_ang_vel_error = torch.norm(asset.data.root_link_ang_vel_b, p=2, dim=1) / 1.2
+
+    normalized_mani_error = (
+        foot_pos_error_b  # 2
+        + wheel_vel_error  # 2
+        + base_lin_vel_error  # 1
+        + base_ang_vel_error  # 1
+        + base_height_error * 0.5  # 1
+        + base_orient_error_roll * 0.5  # 0.5
+        + base_orient_error_pitch * 0.25  # 0.5
+    ) / 8.0
+
+    normalized_loco_error = (
+        foot_pos_error_b / 2.0  # 2
+        + base_orient_error_pitch  # 0.5
+        + base_orient_error_roll  # 0.5
+        + base_height_error  # 1
+    ) / 4.0
+
+    mani_safety_scale = torch.exp(-normalized_mani_error / std**2)
+
+    loco_safety_scale = torch.exp(-normalized_loco_error / std**2)
+
+    env._mani_safety_scale = mani_safety_scale + 0.4
+    env._loco_safety_scale = loco_safety_scale + 0.4
+    
+    return mani_safety_scale * .5 + loco_safety_scale * .5
+
+def track_base_linear_velocity_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str = "base_twist",
+) -> torch.Tensor:
+    """Reward tracking of base linear velocity using exponential kernel."""
+    # Get current base linear velocity
+    current_vel = env.scene["robot"].data.root_link_lin_vel_b[:, :2]  # [vx, vy]
+    
+    # Get linear velocity command 
+    vel_command = env.command_manager.get_command(command_name)
+    
+    # Compute linear velocity error
+    linear_error = torch.norm(current_vel - vel_command[:, :2], dim=1)
+    
+    normal = torch.exp(-linear_error / std**2)
+    micro_enhancement = torch.exp(-5 * linear_error / std**2)
+    
+    return (normal + micro_enhancement) * env._loco_safety_scale
+
+def track_base_angular_velocity_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str = "base_twist",
+) -> torch.Tensor:
+    """Reward tracking of base angular velocity using exponential kernel."""
+    
+    # Get current base angular velocity
+    current_ang_vel = env.scene["robot"].data.root_link_ang_vel_b[:, 2]  # [wz]
+    
+    # Get angular velocity command
+    vel_command = env.command_manager.get_command(command_name)
+    
+    # Compute angular velocity error
+    angular_error = torch.abs(current_ang_vel - vel_command[:, 2])
+    
+    normal = torch.exp(-angular_error / std**2)
+    micro_enhancement = torch.exp(-5 * angular_error / std**2)
+    
+    return (normal + micro_enhancement) * env._loco_safety_scale
+
+def track_base_velocity_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str = "base_twist",
+) -> torch.Tensor:
+    """Reward tracking of base velocity using exponential kernel."""
+    # Get current base velocity
+    current_vel = env.scene["robot"].data.root_link_lin_vel_b[:, :2]  # [vx, vy]
+    current_ang_vel = env.scene["robot"].data.root_link_ang_vel_b[:, 2]  # [wz]
+    
+    # Get velocity command 
+    vel_command = env.command_manager.get_command(command_name)
+    
+    # Compute velocity errors
+    linear_error = torch.norm(current_vel - vel_command[:, :2], dim=1)
+    angular_error = torch.abs(current_ang_vel - vel_command[:, 2])
+    
+    # Combined velocity error
+    total_error = linear_error + angular_error * 0.5  # Weight angular error less
+    
+    return torch.exp(-total_error / std**2)
+
+def weighted_joint_torques_l2(
+    env: ManagerBasedRLEnv,
+    torque_weight: dict[str, float],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize joint torques applied on the articulation using L2 squared kernel.
+
+    NOTE: Only the joints configured in :attr:`asset_cfg.joint_ids` will have their joint torques contribute to the term.
+    """
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    weighted_torque = torch.zeros_like(asset.data.applied_torque)
+
+    for joint_name, w in torque_weight.items():
+        joint_idx, _ = asset.find_joints(joint_name)
+        weighted_torque[:, joint_idx] = torch.square(asset.data.applied_torque[:, joint_idx]) * w
+
+    return torch.sum(weighted_torque, dim=1)
+
+def weighted_joint_power_l1(
+    env: ManagerBasedRLEnv,
+    power_weight: dict[str, float],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize joint power applied on the articulation using L1 kernel.
+
+    NOTE: Only the joints configured in :attr:`asset_cfg.joint_ids` will have their joint torques contribute to the term.
+    """
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    weighted_power = torch.zeros_like(asset.data.applied_torque)
+
+    for joint_name, w in power_weight.items():
+        joint_idx = asset.find_joints(joint_name)[0]
+        weighted_power[:, joint_idx] = (
+            torch.abs(asset.data.applied_torque[:, joint_idx] * asset.data.joint_vel[:, joint_idx]) * w
+        )
+
+    return torch.sum(weighted_power, dim=1)

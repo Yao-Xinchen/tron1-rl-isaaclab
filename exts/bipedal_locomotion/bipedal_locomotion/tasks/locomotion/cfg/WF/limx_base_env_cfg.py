@@ -395,12 +395,6 @@ class RewardsCfg:
                 # "foot_R_Joint": 0.2,
                 "wheel_L_Joint": 3.0,
                 "wheel_R_Joint": 3.0,
-                "J1": 5.0,
-                "J2": 5.0,
-                "J3": 5.0,
-                "J4": 15.0,
-                "J5": 15.0,
-                "J6": 15.0,
             }
         },
     )
@@ -420,12 +414,6 @@ class RewardsCfg:
                 # "foot_R_Joint": 1.0,
                 "wheel_L_Joint": 1.0,
                 "wheel_R_Joint": 1.0,
-                "J1": 5.0,
-                "J2": 5.0,
-                "J3": 5.0,
-                "J4": 5.0,
-                "J5": 5.0,
-                "J6": 5.0,
             }
         },
     )
@@ -453,11 +441,6 @@ class RewardsCfg:
     # joint_deviation_l1 = RewTerm(func=mdp.joint_deviation_l1, weight=0.0)
     # flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=0.0)
     # base_height_l2 = RewTerm(func=mdp.base_height_l2, weight=0.0, params={"target_height": 0.3})
-    feet_contacts_reg = RewTerm(
-        func=mdp.feet_contacts_reg,
-        weight=0.5,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*"), "threshold": 5.0},
-    )
 
     # termination_penalty = RewTerm(func=mdp.is_terminated, weight=-1000)
     # alive = RewTerm(func=mdp.stay_alive, weight=2.0)

@@ -403,7 +403,7 @@ class RewardsCfg:
             "threshold": 10.0,
         },
     )
-    pen_action_smoothness = RewTerm(func=mdp.ActionSmoothnessPenalty, weight=-0.15) # -0.01)
+    pen_action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.15) # -0.01)
     pen_flat_orientation = RewTerm(func=mdp.flat_orientation_l2, weight=-5.0)
     pen_feet_distance = RewTerm(
         func=mdp.feet_distance,
