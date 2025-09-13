@@ -52,7 +52,7 @@ class OnPolicyRunner:
         self.policy_cfg = train_cfg["policy"]
         self.device = device
         self.env = env
-        obs, extras = self.env.get_observations()   
+        obs, extras = self.env.get_observations()
         self.num_obs = obs.shape[1]
         self.obs_history_len = self.alg_cfg.pop("obs_history_len")
         assert "commands" in extras["observations"], f"Commands not found in observations"
@@ -61,6 +61,9 @@ class OnPolicyRunner:
         num_critic_obs = extras["observations"]["critic"].shape[1] + self.num_commands
         privileged_input_size = num_critic_obs
         self.ecd_cfg["num_input_dim"] = self.obs_history_len * self.num_obs
+
+        self.gradient_penalty_cfg = self.alg_cfg["gradient_penalty_cfg"]
+        self.adaptive_entropy_cfg = self.alg_cfg["adaptive_entropy_cfg"]
 
         encoder = eval("MLP_Encoder")(
             **self.ecd_cfg,
@@ -145,7 +148,7 @@ class OnPolicyRunner:
         obs_history = extras["observations"].get("obsHistory")
         obs_history = obs_history.flatten(start_dim=1)
         critic_obs = extras["observations"].get("critic")
-        commands = extras["observations"].get("commands") 
+        commands = extras["observations"].get("commands")
 
         obs, obs_history, commands, critic_obs = (
             obs.to(self.device),
@@ -169,6 +172,8 @@ class OnPolicyRunner:
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
+            # Apply gradient penalty scheme
+            self._gradient_penalty_scheme(it)
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
@@ -228,6 +233,7 @@ class OnPolicyRunner:
                 mean_value_loss,
                 mean_extra_loss,
                 mean_surrogate_loss,
+                mean_grad_penalty,
                 mean_kl,
             ) = self.alg.update()
             stop = time.time()
@@ -280,6 +286,7 @@ class OnPolicyRunner:
         self.writer.add_scalar(
             "Loss/surrogate", locs["mean_surrogate_loss"], locs["it"]
         )
+        self.writer.add_scalar("Loss/grad_penalty", locs["mean_grad_penalty"], locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
         self.writer.add_scalar("Policy/mean_kl", locs["mean_kl"], locs["it"])
@@ -321,6 +328,7 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.4f}\n"""
                 f"""{'Learning rate:':>{pad}} {self.alg.learning_rate:.4f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
@@ -336,6 +344,7 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
             )
             #   f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
@@ -390,3 +399,17 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic
+
+    def _gradient_penalty_scheme(self, it):
+        if not self.gradient_penalty_cfg["enable"]:
+            return
+
+        if it >= self.gradient_penalty_cfg["start_point"]:
+            self.alg.grad_coef = self.gradient_penalty_cfg["start_value"] + (
+                it - self.gradient_penalty_cfg["start_point"]
+            ) / (self.gradient_penalty_cfg["end_point"] - self.gradient_penalty_cfg["start_point"]) * (
+                self.gradient_penalty_cfg["end_value"] - self.gradient_penalty_cfg["start_value"]
+            )
+            self.alg.grad_coef = min(self.alg.grad_coef, self.gradient_penalty_cfg["end_value"])
+        else:
+            self.alg.grad_coef = 0.0

@@ -51,7 +51,8 @@ class PPO:
         gamma=0.998,
         lam=0.95,
         value_loss_coef=1.0,
-        entropy_coef=0.0,
+        entropy_coef=0.01,
+        grad_coef=0.001,
         learning_rate=1e-3,
         max_grad_norm=1.0,
         use_clipped_value_loss=True,
@@ -98,6 +99,7 @@ class PPO:
         self.num_mini_batches = num_mini_batches
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
+        self.grad_coef = grad_coef
         self.gamma = gamma
         self.lam = lam
         self.max_grad_norm = max_grad_norm
@@ -177,10 +179,19 @@ class PPO:
         last_values = self.actor_critic.evaluate(last_critic_obs).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
+    def _calc_grad_penalty(self, obs_batch_list, actions_log_prob_batch):
+        gradient_penalty_loss = 0
+        for obs_batch in obs_batch_list:
+            grad_log_prob = torch.autograd.grad(actions_log_prob_batch.sum(), obs_batch, create_graph=True)[0]
+            gradient_penalty_loss += torch.sum(torch.abs(grad_log_prob), dim=-1).mean()
+        gradient_penalty_loss /= len(obs_batch_list)
+        return gradient_penalty_loss
+
     def update(self):
         num_updates = 0
         mean_value_loss = 0
         mean_surrogate_loss = 0
+        mean_grad_penalty = 0
         mean_kl = 0
         generator = self.storage.mini_batch_generator(
             self.num_group,
@@ -202,12 +213,12 @@ class PPO:
         ) in generator:
             encoder_out_batch = self.encoder.encode(obs_history_batch)
             commands_batch = group_commands_batch
-            self.actor_critic.act(
-                torch.cat(
-                    (encoder_out_batch, obs_batch, commands_batch),
-                    dim=-1,
-                )
+            actor_input = torch.cat(
+                (encoder_out_batch, obs_batch, commands_batch),
+                dim=-1,
             )
+            actor_input.requires_grad_(True)
+            self.actor_critic.act(actor_input)
 
             actions_log_prob_batch = self.actor_critic.get_actions_log_prob(
                 actions_batch
@@ -271,10 +282,15 @@ class PPO:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
 
             entropy_batch_mean = entropy_batch.mean()
+
+            # Gradient penalty
+            grad_penalty = self._calc_grad_penalty([actor_input], actions_log_prob_batch)
+
             loss = (
                 surrogate_loss
                 + self.value_loss_coef * value_loss
                 - self.entropy_coef * entropy_batch_mean
+                + self.grad_coef * grad_penalty
             )
 
             if self.anneal_lr:
@@ -292,6 +308,7 @@ class PPO:
             num_updates += 1
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
+            mean_grad_penalty += grad_penalty.item()
             mean_kl += kl_mean.item()
 
         num_updates_extra = 0
@@ -327,7 +344,8 @@ class PPO:
         if num_updates_extra > 0:
             mean_extra_loss /= num_updates
         mean_surrogate_loss /= num_updates
+        mean_grad_penalty /= num_updates
         mean_kl /= num_updates
         self.storage.clear()
 
-        return (mean_value_loss, mean_extra_loss, mean_surrogate_loss, mean_kl)
+        return (mean_value_loss, mean_extra_loss, mean_surrogate_loss, mean_grad_penalty, mean_kl)

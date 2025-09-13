@@ -18,6 +18,21 @@ class RslRlPpoAlgorithmMlpCfg(RslRlPpoAlgorithmCfg):
 
     obs_history_len: int = 1
 
+    adaptive_entropy_cfg = {
+        "enable": True,
+        "start_value": 0.015,
+        "end_value": 0.0005,
+        "start_point": 0,
+        "end_point": 5000,
+    }
+    gradient_penalty_cfg = {
+        "enable": True,
+        "start_point": 0.0,
+        "start_value": 0.0,
+        "end_value": 0.0002,
+        "end_point": 6000,
+    }
+
 
 @configclass
 class EncoderCfg:
