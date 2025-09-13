@@ -174,6 +174,8 @@ class OnPolicyRunner:
             start = time.time()
             # Apply gradient penalty scheme
             self._gradient_penalty_scheme(it)
+            # Apply adaptive entropy scheme
+            self._adaptive_entropy_scheme(it)
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
@@ -288,6 +290,7 @@ class OnPolicyRunner:
         )
         self.writer.add_scalar("Loss/grad_penalty", locs["mean_grad_penalty"], locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
+        self.writer.add_scalar("Policy/entropy_coef", self.alg.entropy_coef, locs["it"])
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
         self.writer.add_scalar("Policy/mean_kl", locs["mean_kl"], locs["it"])
         self.writer.add_scalar("Perf/total_fps", fps, locs["it"])
@@ -331,6 +334,7 @@ class OnPolicyRunner:
                 f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.4f}\n"""
                 f"""{'Learning rate:':>{pad}} {self.alg.learning_rate:.4f}\n"""
+                f"""{'Entropy coefficient:':>{pad}} {self.alg.entropy_coef:.4f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
                 f"""{'Mean episode length:':>{pad}} {statistics.mean(locs['lenbuffer']):.2f}\n"""
             )
@@ -346,6 +350,7 @@ class OnPolicyRunner:
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
                 f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
+                f"""{'Entropy coefficient:':>{pad}} {self.alg.entropy_coef:.4f}\n"""
             )
             #   f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
             #   f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n""")
@@ -413,3 +418,17 @@ class OnPolicyRunner:
             self.alg.grad_coef = min(self.alg.grad_coef, self.gradient_penalty_cfg["end_value"])
         else:
             self.alg.grad_coef = 0.0
+
+    def _adaptive_entropy_scheme(self, it):
+        if not self.adaptive_entropy_cfg["enable"]:
+            return
+
+        if it >= self.adaptive_entropy_cfg["start_point"]:
+            self.alg.entropy_coef = self.adaptive_entropy_cfg["start_value"] + (
+                it - self.adaptive_entropy_cfg["start_point"]
+            ) / (self.adaptive_entropy_cfg["end_point"] - self.adaptive_entropy_cfg["start_point"]) * (
+                self.adaptive_entropy_cfg["end_value"] - self.adaptive_entropy_cfg["start_value"]
+            )
+            self.alg.entropy_coef = max(self.alg.entropy_coef, self.adaptive_entropy_cfg["end_value"])
+        else:
+            self.alg.entropy_coef = 0.0
