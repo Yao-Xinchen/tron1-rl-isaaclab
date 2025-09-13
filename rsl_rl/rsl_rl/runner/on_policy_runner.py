@@ -115,6 +115,7 @@ class OnPolicyRunner:
         self.tot_timesteps = 0
         self.tot_time = 0
         self.current_learning_iteration = 0
+        self.lr_update_count = 0
 
         # _, _ = self.env.reset()
         _ = self.env.reset()
@@ -170,6 +171,7 @@ class OnPolicyRunner:
         )
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
+        self.tot_iter = tot_iter  # Store for get_learning_rate cooldown calculation
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
             # Apply gradient penalty scheme
@@ -179,6 +181,21 @@ class OnPolicyRunner:
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
+                    # Update learning rate every 3 steps (like reference implementation)
+                    update_lr = i % 3 == 0
+                    if update_lr:
+                        self.lr_update_count += 1
+                        # Use first hidden layer dimension from encoder config as d_model
+                        hidden_dim = self.ecd_cfg.get("hidden_dims", [128])[0] if "hidden_dims" in self.ecd_cfg else 128
+                        scheduled_lr = self.get_learning_rate(self.lr_update_count, hidden_dim)
+                        # Apply to main optimizer
+                        for param_group in self.alg.optimizer.param_groups:
+                            param_group["lr"] = scheduled_lr
+                        # Apply to extra optimizer if it exists
+                        if self.alg.extra_optimizer is not None:
+                            for param_group in self.alg.extra_optimizer.param_groups:
+                                param_group["lr"] = scheduled_lr
+
                     actions = self.alg.act(obs, obs_history, commands, critic_obs)
                     # add critic_obs_buf to step returns, make sure it updates in every for loop
                     (obs, rewards, dones, infos) = self.env.step(actions)
@@ -275,6 +292,7 @@ class OnPolicyRunner:
                 ep_string += f"""{f'{key}:':>{pad}} {value:.4f}\n"""
         # mean_std = self.alg.actor_critic.std.mean()
         mean_std = torch.exp(self.alg.actor_critic.logstd).mean()
+        current_scheduled_lr = self.alg.optimizer.param_groups[0]["lr"]
         fps = int(
             self.num_steps_per_env
             * self.env.num_envs
@@ -290,6 +308,9 @@ class OnPolicyRunner:
         )
         self.writer.add_scalar("Loss/grad_penalty", locs["mean_grad_penalty"], locs["it"])
         self.writer.add_scalar("Loss/learning_rate", self.alg.learning_rate, locs["it"])
+        # Get current scheduled learning rate from optimizer
+        current_scheduled_lr = self.alg.optimizer.param_groups[0]["lr"]
+        self.writer.add_scalar("Loss/scheduled_learning_rate", current_scheduled_lr, locs["it"])
         self.writer.add_scalar("Policy/entropy_coef", self.alg.entropy_coef, locs["it"])
         self.writer.add_scalar("Policy/mean_noise_std", mean_std.item(), locs["it"])
         self.writer.add_scalar("Policy/mean_kl", locs["mean_kl"], locs["it"])
@@ -334,6 +355,7 @@ class OnPolicyRunner:
                 f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.4f}\n"""
                 f"""{'Learning rate:':>{pad}} {self.alg.learning_rate:.4f}\n"""
+                f"""{'Scheduled LR:':>{pad}} {current_scheduled_lr:.6f}\n"""
                 f"""{'Entropy coefficient:':>{pad}} {self.alg.entropy_coef:.4f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
                 f"""{'Mean episode length:':>{pad}} {statistics.mean(locs['lenbuffer']):.2f}\n"""
@@ -350,6 +372,7 @@ class OnPolicyRunner:
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
                 f"""{'Grad penalty loss:':>{pad}} {locs['mean_grad_penalty']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
+                f"""{'Scheduled LR:':>{pad}} {current_scheduled_lr:.6f}\n"""
                 f"""{'Entropy coefficient:':>{pad}} {self.alg.entropy_coef:.4f}\n"""
             )
             #   f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
@@ -432,3 +455,12 @@ class OnPolicyRunner:
             self.alg.entropy_coef = max(self.alg.entropy_coef, self.adaptive_entropy_cfg["end_value"])
         else:
             self.alg.entropy_coef = 0.0
+
+    def get_learning_rate(self, step, d_model, warmup_steps=4000):
+        # Calculate the learning rate using the formula from "Attention is All You Need"
+        lr = 0.5 * (d_model**-0.5) * min((step + 1) ** (-0.5), step * (warmup_steps**-1.5))
+        # End-of-training cooldown for final 2000 iterations
+        if hasattr(self, 'tot_iter') and self.tot_iter - self.current_learning_iteration < 2000:
+            remaining_iters = max(self.tot_iter - self.current_learning_iteration, 0)
+            lr = min(1e-4, max(1e-4 * remaining_iters / 2000, 0.0))
+        return lr
