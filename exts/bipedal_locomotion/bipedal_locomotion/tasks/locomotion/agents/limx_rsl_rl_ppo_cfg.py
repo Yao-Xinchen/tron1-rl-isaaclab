@@ -9,8 +9,8 @@ robot_type = os.getenv("ROBOT_TYPE")
 @configclass
 class PFPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 15000
-    save_interval = 500
+    max_iterations = 10000
+    save_interval = 200
     experiment_name = "pf_flat"
     empirical_normalization = False
     # encoder_class_name = "MLP_Encoder"
@@ -79,8 +79,8 @@ class PF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 @configclass
 class SF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 15000
-    save_interval = 500
+    max_iterations = 10000
+    save_interval = 200
     experiment_name = "sf_tron_1a_flat"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
@@ -119,7 +119,7 @@ class SF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 class WF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
-    save_interval = 500
+    save_interval = 200
     experiment_name = "wf_tron_1a_flat"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
