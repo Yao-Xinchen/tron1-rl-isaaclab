@@ -21,7 +21,7 @@ from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as GaussianNoise
 
 from bipedal_locomotion.tasks.locomotion import mdp
 from bipedal_locomotion.tasks.locomotion.cfg.WF.terrains_cfg import ROUGH_TERRAINS_CFG
-from bipedal_locomotion.assets.config.wheelfoot_cfg import WHEELFOOT_CFG
+from bipedal_locomotion.assets.config.wheelfoot_cfg import WHEELFOOT_ARM_CFG
 
 ##################
 # Scene Definition
@@ -63,7 +63,7 @@ class WFSceneCfg(InteractiveSceneCfg):
     )
 
     # bipedal robot
-    robot: ArticulationCfg = WHEELFOOT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot: ArticulationCfg = WHEELFOOT_ARM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     # height sensors
     height_scanner: RayCasterCfg = MISSING
@@ -89,7 +89,7 @@ class CommandsCfg:
         rel_standing_envs=0.1,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
             lin_vel_x=(-0.2, 0.2),  # min max [m/s]
-            lin_vel_y=(-0.0, 0.0),  # min max [m/s]  
+            lin_vel_y=(-0.0, 0.0),  # min max [m/s]
             ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
         ),
         debug_vis=True,
