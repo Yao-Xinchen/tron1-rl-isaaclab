@@ -2,10 +2,11 @@ import math
 from dataclasses import MISSING
 
 from isaaclab.managers import CommandTermCfg
+from isaaclab.envs.mdp.commands import UniformPoseCommandCfg
 from isaaclab.utils import configclass
 
 from .gait_command import GaitCommand  # Import the GaitCommand class
-
+from .pose_command import UniformWorldPoseCommand
 
 @configclass
 class UniformGaitCommandCfg(CommandTermCfg):
@@ -31,3 +32,11 @@ class UniformGaitCommandCfg(CommandTermCfg):
 
     resampling_time_range: tuple[float, float] = MISSING
     """Time interval for resampling the gait (in seconds)."""
+
+
+@configclass
+class UniformWorldPoseCommandCfg(UniformPoseCommandCfg):
+    se3_decrease_vel_range: tuple[float, float] = (0.5, 1.4)
+    resampling_time_scale: tuple[float, float] = (6.0, 15.0)
+
+    class_type: type = UniformWorldPoseCommand

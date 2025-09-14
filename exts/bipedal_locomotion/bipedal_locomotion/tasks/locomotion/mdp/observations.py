@@ -180,3 +180,18 @@ def joint_pos_rel_exclude_wheel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCf
     all_joints_idx = range(asset.num_joints)
     pos_idx_exclude_wheel = [i for i in all_joints_idx if i not in wheel_joints_idx]
     return asset.data.joint_pos[:, pos_idx_exclude_wheel] - asset.data.default_joint_pos[:, pos_idx_exclude_wheel]
+
+def base_commands_b(
+    env: ManagerBasedRLEnv,
+):
+    base_pose_b = env.command_manager.get_command("base_pose")
+
+    base_orientation = math_utils.matrix_from_quat(math_utils.quat_unique(base_pose_b[:, 3:7]))
+    base_orientation_x = base_orientation[:, :, 0]
+    base_orientation_y = base_orientation[:, :, 1]
+    return torch.cat((base_pose_b[:, :2], base_orientation_x), dim=-1)
+
+
+def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:
+    base_pose_command = env.command_manager.get_term("base_pose")
+    return base_pose_command.decrease_vel.unsqueeze(-1)

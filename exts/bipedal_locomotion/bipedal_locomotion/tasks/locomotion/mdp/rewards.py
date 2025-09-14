@@ -702,3 +702,60 @@ def weighted_joint_power_l1(
         )
 
     return torch.sum(weighted_power, dim=1)
+
+def track_base_position_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    init_value: float = 0.99,
+    command_name: str = "base_pose",
+) -> torch.Tensor:
+    position_error = env.command_manager.get_term(command_name).metrics["position_error"]
+
+    normal = torch.exp(-position_error / std ** 2)
+    micro_enhancement = torch.exp(-5 * position_error / std ** 2)
+
+    return (normal + micro_enhancement) * 0.5 * env._mani_safety_scale
+
+def track_base_orientation_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str = "base_pose",
+    init_value: float = 0.99,
+) -> torch.Tensor:
+    base_position_error = env.command_manager.get_term(command_name).metrics["position_error"]
+
+    position_scale = torch.exp(-base_position_error / 0.5)
+
+    base_orientation_error = env.command_manager.get_term(command_name).metrics["orientation_error"]
+
+    normal = torch.exp(-base_orientation_error / std ** 2)
+
+    micro_enhancement = torch.exp(-5 * base_orientation_error / std ** 2)
+
+    return (normal + micro_enhancement) * position_scale * 0.5  * env._mani_safety_scale
+
+def track_base_pb(env: ManagerBasedRLEnv, command_name: str = "base_pose") -> torch.Tensor:
+    optim_pos_distance = env.command_manager.get_term(command_name).optim_pos_distance
+    position_scale = torch.exp(-optim_pos_distance / 0.5)
+    optim_orient_distance = env.command_manager.get_term(command_name).optim_orient_distance
+    orient_scale = torch.exp(-optim_orient_distance / 0.5)
+    pos_improve = env.command_manager.get_term(command_name).pos_improvement
+    orient_improve = env.command_manager.get_term(command_name).orient_improvement
+    return (2 * pos_improve * position_scale + orient_improve * orient_scale) * env._loco_safety_scale
+
+def track_base_reference_exp(
+    env: ManagerBasedRLEnv,
+    std: float,
+    relese_delta: float = 0.5,
+    init_value: float = 0.99,
+    command_name: str = "base_pose",
+) -> torch.Tensor:
+    base_position_error = env.command_manager.get_term(command_name).metrics["position_error"]
+    base_orientation_error = env.command_manager.get_term(command_name).metrics["orientation_error"]
+    se3_distance_ref = env.command_manager.get_term(command_name).se3_distance_ref
+
+    track_error = torch.abs(se3_distance_ref - base_orientation_error - 2 * base_position_error) - relese_delta
+
+    track_error = torch.clamp(track_error, min=0.0)
+
+    return torch.exp(-track_error / std**2) * 0.5 * env._loco_safety_scale

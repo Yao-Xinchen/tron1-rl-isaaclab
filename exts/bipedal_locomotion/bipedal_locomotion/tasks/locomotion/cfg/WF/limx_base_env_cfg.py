@@ -83,15 +83,23 @@ class WFSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP"""
 
-    base_twist = mdp.UniformVelocityCommandCfg(
+    base_pose = mdp.UniformWorldPoseCommandCfg(
         asset_name="robot",
-        resampling_time_range=(4.0, 8.0),
-        rel_standing_envs=0.1,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.2, 0.2),  # min max [m/s]
-            lin_vel_y=(-0.0, 0.0),  # min max [m/s]  
-            ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
+        body_name="base_Link",
+        resampling_time_range=(6.0, 15.0),
+        resampling_time_scale=(0.5, 5.0),
+        make_quat_unique=True,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(-0.2, 0.2),  # min max [m]
+            pos_y=(-0.2, 0.2),  # min max [m]
+            # pos_x=(-2.0, 2.0),  # min max [m]
+            # pos_y=(-2.0, 2.0),  # min max [m]
+            pos_z=(0.7, 1.1),  # min max [m]
+            roll=(-0.0, 0.0),  # min max [rad]
+            pitch=(-0.0, 0.0),  # min max [rad]
+            yaw=(-3.2, 3.2),  # min max [rad]),
         ),
+        se3_decrease_vel_range=(0.5, 1.4),
         debug_vis=True,
     )
 
@@ -201,7 +209,8 @@ class ObservarionsCfg:
     
     @configclass
     class CommandsObsCfg(ObsGroup):
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_twist"})
+        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
+        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
 
     policy: PolicyCfg = PolicyCfg()
     critic: CriticCfg = CriticCfg()
@@ -328,29 +337,32 @@ class RewardsCfg:
     )
 
     # -- task
-    track_base_linear_velocity_exp = RewTerm(
-        func=mdp.track_base_linear_velocity_exp,
+    track_base_position_exp = RewTerm(
+        func=mdp.track_base_position_exp,
         weight=2.0,
         params={
-            "command_name": "base_twist",
+            "command_name": "base_pose",
             "std": math.sqrt(0.5),
-        },
-    )
-    track_base_angular_velocity_exp = RewTerm(
-        func=mdp.track_base_angular_velocity_exp,
-        weight=1.5,
-        params={
-            "command_name": "base_twist",
-            "std": math.sqrt(0.5),
-        },
-    )
-    # track_base_penalty_cb = RewTerm(func=mdp.tracking_base_cb_penalty_l1, weight=-1.0)
-    # track_base_pb = RewTerm(func=mdp.track_base_pb, weight=15.0)
+            "init_value": 0.98,
 
-    track_base_velocity_exp = RewTerm(
-        func=mdp.track_base_velocity_exp,
-        weight=1.0,
-        params={"command_name": "base_twist", "std": math.sqrt(0.5)},
+        },
+    )
+    track_base_orientation_exp = RewTerm(
+        func=mdp.track_base_orientation_exp,
+        weight=3.0,
+        params={
+            "command_name": "base_pose",
+            "std": math.sqrt(0.5),
+            "init_value": 0.98,
+
+        },
+    )
+    track_base_pb = RewTerm(func=mdp.track_base_pb, weight=15.0)
+
+    track_base_reference_exp = RewTerm(
+        func=mdp.track_base_reference_exp,
+        weight=1.5,
+        params={"std": math.sqrt(0.5), "init_value": 0.98},
     )
 
     # -- penalties
@@ -454,13 +466,19 @@ class CurriculumCfg:
     """Curriculum terms for the MDP"""
 
     # terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
-    
-    velocity_commands_ranges_level = CurrTerm(
-        func=mdp.velocity_commands_ranges_level,  # type: ignore
+    pos_commands_ranges_level = CurrTerm(
+        func=mdp.pos_commands_ranges_level,  # type: ignore
         params={
-            "max_range": {"lin_vel_x": (-2.0, 2.0), "lin_vel_y": (-1.0, 1.0), "ang_vel_z": (-2.0, 2.0)},
+            "max_range": {"pos_x": (-3.5, 3.5), "pos_y": (-3.5, 3.5), "pos_z": (0.1, 1.2)},
             "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
-            "command_name": "base_twist",
+            "command_name": "base_pose",
+        },
+    )
+    orient_commands_ranges_level = CurrTerm(
+        func=mdp.orient_commands_ranges_level, # type: ignore
+        params={
+            "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
+            "command_name": "base_pose",
         },
     )
 

@@ -70,37 +70,43 @@ def disable_termination(
     return torch.zeros(1)
 
 
-def velocity_commands_ranges_level(
+def pos_commands_ranges_level(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     max_range: dict[str, tuple[float, float]],
     update_interval: int = 50 * 24,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    command_name: str = "base_twist",
+    command_name: str = "base_pose",
 ) -> torch.Tensor:
-    """Curriculum that progressively increases velocity command ranges.
-
-    Returns:
-        The current maximum velocity range.
-    """
     # extract the used quantities (to enable type-hinting)
-    command_cfg: mdp.UniformVelocityCommandCfg = env.command_manager.get_term(command_name).cfg
-    current_vx = command_cfg.ranges.lin_vel_x[1]
-    
+    command_cfg: mdp.UniformPoseCommandCfg = env.command_manager.get_term(command_name).cfg
+    x = command_cfg.ranges.pos_x[1]
     if env.common_step_counter % update_interval == 0:
-        new_vx = command_cfg.ranges.lin_vel_x[1] + 0.1  # Increase by 0.1 m/s
-        new_vy = command_cfg.ranges.lin_vel_y[1] + 0.04  # Increase by 0.04 m/s
-        new_wz = command_cfg.ranges.ang_vel_z[1] + 0.1   # Increase by 0.1 rad/s
-        
-        # Clamp to maximum ranges
-        new_vx = min(new_vx, max_range["lin_vel_x"][1])
-        new_vy = min(new_vy, max_range["lin_vel_y"][1])
-        new_wz = min(new_wz, max_range["ang_vel_z"][1])
-        
-        # Update ranges symmetrically
-        command_cfg.ranges.lin_vel_x = (-new_vx, new_vx)
-        command_cfg.ranges.lin_vel_y = (-new_vy, new_vy)
-        command_cfg.ranges.ang_vel_z = (-new_wz, new_wz)
-        current_vx = new_vx
+        x = command_cfg.ranges.pos_x[1] + 0.25
+        y = command_cfg.ranges.pos_y[1] + 0.25
+        x = min(x, max_range["pos_x"][1])
+        y = min(y, max_range["pos_y"][1])
+        command_cfg.ranges.pos_x = (-x, x)
+        command_cfg.ranges.pos_y = (-y, y)
 
-    return torch.ones(1, dtype=torch.float) * current_vx
+    # return the mean terrain level
+    return torch.ones(1, dtype=torch.float) * x
+
+
+def orient_commands_ranges_level(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    update_interval: int = 50 * 24,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "base_pose",
+) -> torch.Tensor:
+    # extract the used quantities (to enable type-hinting)
+    command_cfg: mdp.UniformPoseCommandCfg = env.command_manager.get_term(command_name).cfg
+    z = command_cfg.ranges.yaw[1]
+    if env.common_step_counter % update_interval == 0:
+        z = command_cfg.ranges.yaw[1] + 0.04
+        z = min(z, 3.14)
+        command_cfg.ranges.yaw = (-z, z)
+
+    # return the mean terrain level
+    return torch.ones(1, dtype=torch.float) * z
