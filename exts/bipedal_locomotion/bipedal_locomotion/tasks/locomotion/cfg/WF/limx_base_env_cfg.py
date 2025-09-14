@@ -18,6 +18,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as GaussianNoise
+from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from bipedal_locomotion.tasks.locomotion import mdp
 from bipedal_locomotion.tasks.locomotion.cfg.WF.terrains_cfg import ROUGH_TERRAINS_CFG
@@ -91,6 +92,9 @@ class CommandsCfg:
             lin_vel_x=(-0.2, 0.2),  # min max [m/s]
             lin_vel_y=(-0.0, 0.0),  # min max [m/s]
             ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
+            # lin_vel_x=(-2.0, 2.0),  # min max [m/s]
+            # lin_vel_y=(-1.0, 1.0),  # min max [m/s]
+            # ang_vel_z=(-0.5, 0.5),  # min max [rad/s]
         ),
         debug_vis=True,
     )
@@ -119,10 +123,23 @@ class ObservarionsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]}, 
-                            noise=GaussianNoise(mean=0.0, std=0.01))
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
+            )},
+        )  # 6
+
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            noise=Unoise(n_min=-1.5, n_max=1.5),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
+            )},
+        )
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
@@ -140,10 +157,23 @@ class ObservarionsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]}, 
-                            noise=GaussianNoise(mean=0.0, std=0.01))
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
+            )},
+        )  # 6
+
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            noise=Unoise(n_min=-1.5, n_max=1.5),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
+            )},
+        )
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
