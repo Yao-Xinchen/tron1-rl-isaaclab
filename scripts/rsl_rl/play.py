@@ -112,13 +112,13 @@ def main():
             ppo_runner.alg.actor_critic.actor, 
             export_model_dir, 
             "policy",
-            ppo_runner.alg.actor_critic.num_actor_obs,
+            [1, ppo_runner.alg.actor_critic.num_actor_obs],
         )
         export_mlp_as_onnx(
             ppo_runner.alg.encoder,
             export_model_dir,
             "encoder",
-            ppo_runner.alg.encoder.num_input_dim,
+            [1, ppo_runner.alg.encoder.num_input_dim],
         )
     # reset environment
     obs, obs_dict = env.get_observations()
