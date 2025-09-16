@@ -33,12 +33,13 @@ from isaaclab.envs.mdp.commands import UniformPoseCommandCfg
 from isaaclab.envs.mdp import UniformPoseCommand
 from isaaclab.envs import ManagerBasedEnv
 
+
 def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
     r, i, j, k = torch.unbind(quaternions, -1)
     two_s = 2.0 / (quaternions * quaternions).sum(-1)
 
     o = torch.stack(
-        (
+        [
             1 - two_s * (j * j + k * k),
             two_s * (i * j - k * r),
             two_s * (i * k + j * r),
@@ -48,14 +49,16 @@ def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
             two_s * (i * k - j * r),
             two_s * (j * k + i * r),
             1 - two_s * (i * i + j * j),
-        ),
-        -1,
+        ],
+        dim=-1,
     )
     return o.reshape(quaternions.shape[:-1] + (3, 3))
+
 
 def generate_sigmoid_scale(mu: float, decay_length: float, x: torch.Tensor):
     sigmoid_z = 5 / decay_length * (x - mu)
     return torch.sigmoid(sigmoid_z)
+
 
 def compute_rotation_distance(input_quat, target_quat):
     Ee_target_R = quaternion_to_matrix(target_quat)

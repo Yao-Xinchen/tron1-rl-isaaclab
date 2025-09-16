@@ -167,7 +167,7 @@ def generated_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Tenso
     return env.command_manager.get_command(command_name)
 
 def joint_pos_rel_exclude_wheel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-                                wheel_joints_name: list[str] = ["wheel_[RL]_Joint"] 
+                                wheel_joints_name: list[str] = ["wheel_[RL]_Joint"]
                                 ) -> torch.Tensor:
     """The joint positions of the asset w.r.t. the default joint positions.
 
@@ -184,12 +184,22 @@ def joint_pos_rel_exclude_wheel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCf
 def base_commands_b(
     env: ManagerBasedRLEnv,
 ):
-    base_pose_b = env.command_manager.get_command("base_pose")
+    target_pose_b = env.command_manager.get_command("base_pose")
 
-    base_orientation = math_utils.matrix_from_quat(math_utils.quat_unique(base_pose_b[:, 3:7]))
-    base_orientation_x = base_orientation[:, :, 0]
-    base_orientation_y = base_orientation[:, :, 1]
-    return torch.cat((base_pose_b[:, :2], base_orientation_x), dim=-1)
+    target_dist = torch.norm(target_pose_b[:, :2], dim=-1, keepdim=True)
+    target_direction = target_pose_b[:, :2] / target_dist
+    target_dist_scaled = .5 * torch.log(1. + 3. * target_dist)
+
+    target_orientation = math_utils.matrix_from_quat(math_utils.quat_unique(target_pose_b[:, 3:7]))
+    target_orientation_x = target_orientation[:, :, 0]
+
+    return torch.cat(
+        [
+            target_dist_scaled,
+            target_direction,
+            target_orientation_x[:, :2],
+        ], dim=-1
+    )
 
 
 def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:

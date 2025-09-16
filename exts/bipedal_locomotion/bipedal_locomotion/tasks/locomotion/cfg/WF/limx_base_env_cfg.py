@@ -115,7 +115,7 @@ class ActionsCfg:
 
 
 @configclass
-class ObservarionsCfg:
+class ObservationsCfg:
     """Observation specifications for the MDP"""
 
     @configclass
@@ -183,7 +183,6 @@ class ObservarionsCfg:
 
         # heights scan
         heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
-
         
         # Privileged observation
         robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque)
@@ -469,14 +468,7 @@ class CurriculumCfg:
     pos_commands_ranges_level = CurrTerm(
         func=mdp.pos_commands_ranges_level,  # type: ignore
         params={
-            "max_range": {"pos_x": (-3.5, 3.5), "pos_y": (-3.5, 3.5), "pos_z": (0.1, 1.2)},
-            "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
-            "command_name": "base_pose",
-        },
-    )
-    orient_commands_ranges_level = CurrTerm(
-        func=mdp.orient_commands_ranges_level, # type: ignore
-        params={
+            "max_range": {"pos_x": (-5.0, 5.0), "pos_y": (-5.0, 5.0)},
             "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
             "command_name": "base_pose",
         },
@@ -494,7 +486,7 @@ class WFEnvCfg(ManagerBasedRLEnvCfg):
     # Scene settings
     scene: WFSceneCfg = WFSceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
-    observations: ObservarionsCfg = ObservarionsCfg()
+    observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
     # MDP settings

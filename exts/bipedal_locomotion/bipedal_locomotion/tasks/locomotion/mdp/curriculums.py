@@ -91,22 +91,3 @@ def pos_commands_ranges_level(
 
     # return the mean terrain level
     return torch.ones(1, dtype=torch.float) * x
-
-
-def orient_commands_ranges_level(
-    env: ManagerBasedRLEnv,
-    env_ids: Sequence[int],
-    update_interval: int = 50 * 24,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    command_name: str = "base_pose",
-) -> torch.Tensor:
-    # extract the used quantities (to enable type-hinting)
-    command_cfg: mdp.UniformPoseCommandCfg = env.command_manager.get_term(command_name).cfg
-    z = command_cfg.ranges.yaw[1]
-    if env.common_step_counter % update_interval == 0:
-        z = command_cfg.ranges.yaw[1] + 0.04
-        z = min(z, 3.14)
-        command_cfg.ranges.yaw = (-z, z)
-
-    # return the mean terrain level
-    return torch.ones(1, dtype=torch.float) * z
