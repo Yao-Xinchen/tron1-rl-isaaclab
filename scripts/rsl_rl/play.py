@@ -115,28 +115,26 @@ def main():
             ppo_runner.alg.actor_critic.num_actor_obs,
         )
         export_mlp_as_onnx(
-            ppo_runner.alg.encoder,
+            ppo_runner.alg.actor_critic.proprioceptive_encoder,
             export_model_dir,
             "encoder",
-            ppo_runner.alg.encoder.input_dim,
+            ppo_runner.alg.actor_critic.proprioceptive_encoder.input_dim,
         )
     # reset environment
     obs, obs_dict = env.get_observations()
     obs_history = obs_dict["observations"].get("obsHistory")
     obs_history = obs_history.flatten(start_dim=1)
-    commands = obs_dict["observations"].get("commands") 
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            est = encoder(obs_history)
-            actions = policy(torch.cat((est, obs, commands), dim=-1).detach())
+            actions = policy(obs, obs_history)
             # env stepping
             obs, _, _, infos = env.step(actions)
             obs_history = infos["observations"].get("obsHistory")
             obs_history = obs_history.flatten(start_dim=1)
-            commands = infos["observations"].get("commands") 
 
     # close the simulator
     env.close()
