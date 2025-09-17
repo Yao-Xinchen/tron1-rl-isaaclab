@@ -107,7 +107,7 @@ class ActionsCfg:
     joint_pos = mdp.JointPositionActionCfg(asset_name="robot", joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"],
                                            scale=0.5, use_default_offset=True)
     joint_vel = mdp.JointVelocityActionCfg(asset_name="robot", joint_names=["wheel_[RL]_Joint"], 
-                                           scale=5.0, use_default_offset=True)
+                                           scale=10.0, use_default_offset=True)
 
 
 @configclass
@@ -139,6 +139,7 @@ class ObservarionsCfg:
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
             )},
+            scale=0.1,
         )
 
         # last action
@@ -173,6 +174,7 @@ class ObservarionsCfg:
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
             )},
+            scale=0.1,
         )
 
         # last action
@@ -194,8 +196,14 @@ class ObservarionsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity,clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel, clip=(-100.0, 100.0), scale=1.0,)
-        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=1.0,)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
+            )},
+        )  # 6
+        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.1,)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
@@ -205,7 +213,6 @@ class ObservarionsCfg:
 
         # heights scan
         heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
-
         
         # Privileged observation
         robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque)
@@ -298,6 +305,18 @@ class EventsCfg:
         },
     )
 
+    # # set arm links to zero mass and inertia
+    # zero_arm_mass = EventTerm(
+    #     func=mdp.randomize_rigid_body_mass,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names="link[1-7]"),
+    #         "mass_distribution_params": (0.000001, 0.000001),
+    #         "operation": "abs",
+    #         "recompute_inertia": True,
+    #     },
+    # )
+
     # reset
     base_external_force_torque = EventTerm(
         func=mdp.apply_external_force_torque,
@@ -313,7 +332,7 @@ class EventsCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
+            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14), "roll": (-0.1, 0.1), "pitch": (-0.1, 0.1)},
             "velocity_range": {
                 "x": (-0.5, 0.5),
                 "y": (-0.5, 0.5),
@@ -326,11 +345,11 @@ class EventsCfg:
     )
 
     reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_scale,
+        func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (0.0, 0.0),
-            "velocity_range": (0.0, 0.0),
+            "position_range": (-0.3, 0.3),
+            "velocity_range": (-0.5, 0.5),
         },
     )
 
@@ -473,7 +492,7 @@ class TerminationsCfg:
     bad_height = DoneTerm(
         func=mdp.bad_height_stochastic,
         params={
-            "limit_height": 0.5,
+            "limit_height": 0.4,
             "probability": 0.1,
         },  # Expect step = 1 / probability
     )
@@ -488,7 +507,7 @@ class CurriculumCfg:
     velocity_commands_ranges_level = CurrTerm(
         func=mdp.velocity_commands_ranges_level,  # type: ignore
         params={
-            "max_range": {"lin_vel_x": (-2.0, 2.0), "lin_vel_y": (-1.0, 1.0), "ang_vel_z": (-2.0, 2.0)},
+            "max_range": {"lin_vel_x": (-2.0, 2.0), "lin_vel_y": (-1.5, 1.5), "ang_vel_z": (-2.0, 2.0)},
             "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
             "command_name": "base_twist",
         },

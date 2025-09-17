@@ -26,11 +26,6 @@ from isaaclab.managers import SceneEntityCfg
 class WFBaseEnvCfg(WFEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-
-        self.events.add_base_mass.params["asset_cfg"].body_names = "base_Link"
-        self.events.add_base_mass.params["mass_distribution_params"] = (-1.0, 2.0)
-
-        self.terminations.base_contact.params["sensor_cfg"].body_names = "base_Link"
         
         # update viewport camera
         self.viewer.origin_type = "env"
