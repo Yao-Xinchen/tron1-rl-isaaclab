@@ -45,7 +45,7 @@ class ActorCritic(nn.Module):
             num_actor_obs,
             num_critic_obs,
             num_actions,
-            obs_history_length=15,
+            num_obs_history,
             actor_hidden_dims=[512, 256, 128],
             critic_hidden_dims=[512, 256, 128],
             encoder_hidden_dims=[512, 256, 128],
@@ -63,7 +63,7 @@ class ActorCritic(nn.Module):
 
         # Proprioceptive Encoder
         self.proprioceptive_encoder = MLP_Encoder(
-            input_dim=num_actor_obs * obs_history_length,
+            input_dim=num_obs_history,
             output_dim=encoder_latent_dim,
             hidden_dims=encoder_hidden_dims,
             activation="elu"
@@ -164,7 +164,7 @@ class ActorCritic(nn.Module):
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
-    def act_inference(self, observations, observations_history, critic_observations):
+    def act_inference(self, observations, observations_history):
         latent = self.proprioceptive_encoder(observations_history)  # student inference
         # latent = self.privileged_encoder(critic_observations) # teacher inference
         latent = nn.functional.normalize(latent, p=2, dim=-1)

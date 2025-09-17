@@ -65,7 +65,6 @@ class PF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
-        obs_history_len=10,
     )
     encoder = EncoderCfg(
         output_detach = True,
@@ -103,7 +102,6 @@ class SF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
-        obs_history_len=10,
     )
     encoder = EncoderCfg(
         output_detach = True,
@@ -142,7 +140,6 @@ class WF_TRON1AFlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
-        obs_history_len=10,
     )
     encoder = EncoderCfg(
         output_detach = True,

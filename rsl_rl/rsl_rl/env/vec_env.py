@@ -23,13 +23,7 @@ class VecEnv(ABC):
     @abstractmethod
     def step(
             self, actions: torch.Tensor
-    ) -> Tuple[
-        torch.Tensor,
-        Union[torch.Tensor, None],
-        torch.Tensor,
-        torch.Tensor,
-        dict
-    ]:
+    ):
         pass
 
     @abstractmethod
@@ -37,5 +31,5 @@ class VecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_observations(self) -> torch.Tensor:
+    def get_observations(self):
         pass

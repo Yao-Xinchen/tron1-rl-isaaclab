@@ -144,6 +144,9 @@ class ObservarionsCfg:
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
+
+        # commands
+        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_twist"})
       
         def __post_init__(self):
             self.enable_corruption = True
@@ -235,14 +238,9 @@ class ObservarionsCfg:
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
-    
-    @configclass
-    class CommandsObsCfg(ObsGroup):
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_twist"})
 
     policy: PolicyCfg = PolicyCfg()
     critic: CriticCfg = CriticCfg()
-    commands: CommandsObsCfg = CommandsObsCfg()
     obsHistory: HistoryObsCfg = HistoryObsCfg()
 
 

@@ -57,8 +57,12 @@ class PPO:
             desired_kl=0.01,
             device='cpu',
             num_proprio_encoder_substeps=1,
-            student_reinforcing=False
+            student_reinforcing=False,
+            **kwargs
     ):
+        if kwargs:
+            print("ActorCritic.__init__ got unexpected arguments, which will be ignored: " + str(
+                [key for key in kwargs.keys()]))
 
         self.device = device
 

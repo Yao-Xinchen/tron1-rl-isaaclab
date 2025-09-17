@@ -51,23 +51,30 @@ class OnPolicyRunner:
             device='cpu'
     ):
 
-        self.cfg = train_cfg["runner"]
+        self.cfg = train_cfg
         self.alg_cfg = train_cfg["algorithm"]
         self.policy_cfg = train_cfg["policy"]
         self.device = device
         self.env = env
-        if self.env.num_privileged_obs is not None:
-            num_critic_obs = self.env.num_privileged_obs
-        else:
-            num_critic_obs = self.env.num_obs
-        actor_critic_class = eval(self.cfg["policy_class_name"])  # ActorCritic
-        actor_critic: ActorCritic = actor_critic_class(self.env.num_obs,
-                                                       num_critic_obs,
-                                                       self.env.num_actions,
-                                                       **self.policy_cfg).to(self.device)
-        alg_class = eval(self.cfg["algorithm_class_name"])  # PPO
 
-        self.alg: PPO = alg_class(
+        obs, extras = self.env.get_observations()
+        obs_history = extras["observations"].get("obsHistory")
+        obs_history = obs_history.flatten(start_dim=1)
+        critic_obs = extras["observations"].get("critic")
+
+        self.num_obs = obs.shape[1]
+        self.num_critic_obs = critic_obs.shape[1]
+        self.num_obs_history = obs_history.shape[1]
+
+        actor_critic: ActorCritic = ActorCritic(
+            self.num_obs,
+            self.num_critic_obs,
+            self.env.num_actions,
+            self.num_obs_history,
+            **self.policy_cfg
+        ).to(self.device)
+
+        self.alg: PPO = PPO(
             actor_critic, device=self.device, **self.alg_cfg
         )
 
@@ -78,9 +85,9 @@ class OnPolicyRunner:
         self.alg.init_storage(
             self.env.num_envs,
             self.num_steps_per_env,
-            [self.env.num_obs],
-            [self.env.obs_history_length * self.env.num_obs],
-            [self.env.num_privileged_obs],
+            [self.num_obs],
+            [self.num_obs_history],
+            [self.num_critic_obs],
             [self.env.num_actions])
 
         # Log
@@ -100,10 +107,10 @@ class OnPolicyRunner:
             self.env.episode_length_buf = torch.randint_like(
                 self.env.episode_length_buf, high=int(
                     self.env.max_episode_length))
-        obs = self.env.get_observations()
-        obs_history = self.env.get_observations_history()
-        privileged_obs = self.env.get_privileged_observations()
-        critic_obs = privileged_obs if privileged_obs is not None else obs
+        obs, extras = self.env.get_observations()
+        obs_history = extras["observations"].get("obsHistory")
+        obs_history = obs_history.flatten(start_dim=1)
+        critic_obs = extras["observations"].get("critic")
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
@@ -122,8 +129,10 @@ class OnPolicyRunner:
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, obs_history, critic_obs)
-                    obs, privileged_obs, rewards, dones, infos, obs_history = self.env.step(actions)
-                    critic_obs = privileged_obs if privileged_obs is not None else obs
+                    (obs, rewards, dones, infos) = self.env.step(actions)
+                    critic_obs = infos["observations"]["critic"]
+                    obs_history = infos["observations"]["obsHistory"].flatten(start_dim=1)
+
                     obs, critic_obs, rewards, dones, obs_history = obs.to(self.device), critic_obs.to(self.device), \
                         rewards.to(self.device), dones.to(self.device), obs_history.to(self.device)
                     self.alg.process_env_step(rewards, dones, infos)
@@ -258,3 +267,9 @@ class OnPolicyRunner:
         if device is not None:
             self.alg.actor_critic.to(device)
         return self.alg.actor_critic.act_inference
+
+    def get_inference_encoder(self, device=None):
+        self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+        if device is not None:
+            self.alg.actor_critic.to(device)
+        return self.alg.actor_critic.proprioceptive_encoder
