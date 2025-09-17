@@ -118,7 +118,7 @@ def main():
             ppo_runner.alg.encoder,
             export_model_dir,
             "encoder",
-            ppo_runner.alg.encoder.num_input_dim,
+            ppo_runner.alg.encoder.input_dim,
         )
     # reset environment
     obs, obs_dict = env.get_observations()

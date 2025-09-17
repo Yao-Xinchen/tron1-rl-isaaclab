@@ -42,8 +42,8 @@ class MLP_Encoder(nn.Module):
 
     def __init__(
         self,
-        num_input_dim,
-        num_output_dim,
+        input_dim,
+        output_dim,
         hidden_dims=[256, 256],
         activation="elu",
         orthogonal_init=False,
@@ -59,20 +59,20 @@ class MLP_Encoder(nn.Module):
 
         self.orthogonal_init = orthogonal_init
         self.output_detach = output_detach
-        self.num_input_dim = num_input_dim
-        self.num_output_dim = num_output_dim
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         activation = get_activation(activation)
 
         # Encoder
         encoder_layers = []
-        encoder_layers.append(nn.Linear(num_input_dim, hidden_dims[0]))
+        encoder_layers.append(nn.Linear(input_dim, hidden_dims[0]))
         if self.orthogonal_init:
             torch.nn.init.orthogonal_(encoder_layers[-1].weight, np.sqrt(2))
         encoder_layers.append(activation)
         for l in range(len(hidden_dims)):
             if l == len(hidden_dims) - 1:
-                encoder_layers.append(nn.Linear(hidden_dims[l], num_output_dim))
+                encoder_layers.append(nn.Linear(hidden_dims[l], output_dim))
                 if self.orthogonal_init:
                     torch.nn.init.orthogonal_(encoder_layers[-1].weight, 0.01)
                     torch.nn.init.constant_(encoder_layers[-1].bias, 0.0)

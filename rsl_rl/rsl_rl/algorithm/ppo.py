@@ -31,66 +31,72 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
-from rsl_rl.modules import ActorCritic, MLP_Encoder
-from rsl_rl.storage import RolloutStorage
+from ..modules import ActorCritic
+from ..storage import RolloutStorage
 
 
 class PPO:
     actor_critic: ActorCritic
-    encoder: MLP_Encoder
 
     def __init__(
-        self,
-        num_group,
-        encoder,
-        actor_critic,
-        num_learning_epochs=1,
-        num_mini_batches=1,
-        clip_param=0.2,
-        gamma=0.998,
-        lam=0.95,
-        value_loss_coef=1.0,
-        entropy_coef=0.01,
-        grad_coef=0.001,
-        learning_rate=1e-3,
-        max_grad_norm=1.0,
-        use_clipped_value_loss=True,
-        schedule="fixed",
-        desired_kl=0.01,
-        vae_beta=1.0,
-        est_learning_rate=1.0e-3,
-        critic_take_latent=False,
-        early_stop=False,
-        anneal_lr=False,
-        device="cpu",
-        **kwargs,
+            self,
+            actor_critic,
+            num_learning_epochs=1,
+            num_mini_batches=1,
+            clip_param=0.2,
+            gamma=0.998,
+            lam=0.95,
+            value_loss_coef=1.0,
+            entropy_coef=0.01,
+            learning_rate=1e-3,
+            max_grad_norm=1.0,
+            use_clipped_value_loss=True,
+            schedule="fixed",
+            desired_kl=0.01,
+            device='cpu',
+            num_proprio_encoder_substeps=1,
+            student_reinforcing=False
     ):
+
         self.device = device
-        self.num_group = num_group
 
         self.desired_kl = desired_kl
-        self.early_stop = early_stop
         self.schedule = schedule
         self.learning_rate = learning_rate
-        self.anneal_lr = anneal_lr
-        self.vae_beta = vae_beta
-        self.critic_take_latent = critic_take_latent
 
-        self.encoder = encoder
+        self.num_proprio_encoder_substeps = num_proprio_encoder_substeps
+        self.student_reinforcing = student_reinforcing
 
         # PPO components
         self.actor_critic = actor_critic
         self.actor_critic.to(self.device)
         self.storage = None  # initialized later
-        self.optimizer = optim.Adam([{"params": self.actor_critic.parameters()}], lr=learning_rate)
-
-        if self.encoder.num_output_dim != 0:
+        if not self.student_reinforcing:
+            self.optimizer = optim.Adam(
+                [
+                    {"params": self.actor_critic.actor.parameters()},
+                    {"params": self.actor_critic.critic.parameters()},
+                    {"params": self.actor_critic.privileged_encoder.parameters()},
+                    {"params": self.actor_critic.std},
+                ],
+                lr=learning_rate)
             self.extra_optimizer = optim.Adam(
-                self.encoder.parameters(), lr=est_learning_rate
-            )
+                [
+                    {"params": self.actor_critic.proprioceptive_encoder.parameters()},
+                ],
+                lr=0.001)
         else:
-            self.extra_optimizer = None
+            self.optimizer = optim.Adam(
+                [
+                    {"params": self.actor_critic.actor.parameters()},
+                    {"params": self.actor_critic.critic.parameters()},
+                    {"params": self.actor_critic.proprioceptive_encoder.parameters()},
+                    {"params": self.actor_critic.std},
+                ],
+                lr=learning_rate)
+
         self.transition = RolloutStorage.Transition()
 
         # PPO parameters
@@ -99,32 +105,27 @@ class PPO:
         self.num_mini_batches = num_mini_batches
         self.value_loss_coef = value_loss_coef
         self.entropy_coef = entropy_coef
-        self.grad_coef = grad_coef
         self.gamma = gamma
         self.lam = lam
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
 
     def init_storage(
-        self,
-        num_envs,
-        num_transitions_per_env,
-        actor_obs_shape,
-        critic_obs_shape,
-        obs_history_shape,
-        commands_shape,
-        action_shape,
-    ):
+            self,
+            num_envs,
+            num_transitions_per_env,
+            actor_obs_shape,
+            obs_history_shape,
+            critic_obs_shape,
+            action_shape):
         self.storage = RolloutStorage(
             num_envs,
             num_transitions_per_env,
             actor_obs_shape,
-            critic_obs_shape,
             obs_history_shape,
-            commands_shape,
+            critic_obs_shape,
             action_shape,
-            self.device,
-        )
+            self.device)
 
     def test_mode(self):
         self.actor_critic.test()
@@ -132,45 +133,33 @@ class PPO:
     def train_mode(self):
         self.actor_critic.train()
 
-    def act(self, obs, obs_history, commands, critic_obs):
-        critic_obs = torch.cat((critic_obs, commands), dim=-1)
-        # act
-        encoder_out = self.encoder.encode(obs_history)
-        self.transition.actions = self.actor_critic.act(
-            torch.cat((encoder_out, obs, commands), dim=-1)
-        ).detach()
-
-        # evaluate
-        if self.critic_take_latent:
-            critic_obs = torch.cat((critic_obs, encoder_out), dim=-1)
-        self.transition.values = self.actor_critic.evaluate(critic_obs).detach()
-
-        # storage
+    def act(self, obs, obs_history, critic_obs):
+        if self.actor_critic.is_recurrent:
+            self.transition.hidden_states = self.actor_critic.get_hidden_states()
+        # Compute the actions and values
+        self.transition.actions = self.actor_critic.act(obs, obs_history, critic_obs).detach()
+        self.transition.values = self.actor_critic.evaluate(
+            critic_obs).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(
-            self.transition.actions
-        ).detach()
+            self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
         self.transition.action_sigma = self.actor_critic.action_std.detach()
         # need to record obs and critic_obs before env.step()
-        self.transition.observations = obs
-        self.transition.critic_obs = critic_obs
-        self.transition.observation_history = obs_history
-        self.transition.commands = commands
+        self.transition.observations = obs.clone()
+        self.transition.observations_history = obs_history.clone()
+        self.transition.critic_observations = critic_obs.clone()
         return self.transition.actions
 
-    def process_env_step(self, rewards, dones, infos, next_obs=None):
+    def process_env_step(self, rewards, dones, infos):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
         # Bootstrapping on time outs
-        if "time_outs" in infos:
-            self.transition.rewards += self.gamma * torch.squeeze(
-                self.transition.values
-                * infos["time_outs"].unsqueeze(1).to(self.device),
-                1,
-            )
+        if 'time_outs' in infos:
+            self.transition.rewards += self.gamma * \
+                                       torch.squeeze(self.transition.values *
+                                                     infos['time_outs'].unsqueeze(1).to(self.device), 1)
 
         # Record the transition
-        self.transition.next_observations = next_obs
         self.storage.add_transitions(self.transition)
         self.transition.clear()
         self.actor_critic.reset(dones)
@@ -179,173 +168,123 @@ class PPO:
         last_values = self.actor_critic.evaluate(last_critic_obs).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
-    def _calc_grad_penalty(self, obs_batch_list, actions_log_prob_batch):
-        gradient_penalty_loss = 0
-        for obs_batch in obs_batch_list:
-            grad_log_prob = torch.autograd.grad(actions_log_prob_batch.sum(), obs_batch, create_graph=True)[0]
-            gradient_penalty_loss += torch.sum(torch.abs(grad_log_prob), dim=-1).mean()
-        gradient_penalty_loss /= len(obs_batch_list)
-        return gradient_penalty_loss
-
     def update(self):
-        num_updates = 0
         mean_value_loss = 0
         mean_surrogate_loss = 0
-        mean_grad_penalty = 0
-        mean_kl = 0
-        generator = self.storage.mini_batch_generator(
-            self.num_group,
-            self.num_mini_batches,
-            self.num_learning_epochs,
-        )
+        mean_proprio_extra_loss = 0
+        if self.actor_critic.is_recurrent:
+            generator = self.storage.reccurent_mini_batch_generator(
+                self.num_mini_batches, self.num_learning_epochs)
+        else:
+            generator = self.storage.mini_batch_generator(
+                self.num_mini_batches, self.num_learning_epochs)
         for (
-            obs_batch,
-            critic_obs_batch,
-            obs_history_batch, _,
-            group_commands_batch,
-            actions_batch,
-            target_values_batch,
-            advantages_batch,
-            returns_batch,
-            old_actions_log_prob_batch,
-            old_mu_batch,
-            old_sigma_batch,
+                obs_batch,
+                obs_history_batch,
+                critic_obs_batch,
+                actions_batch,
+                target_values_batch,
+                advantages_batch,
+                returns_batch,
+                old_actions_log_prob_batch,
+                old_mu_batch,
+                old_sigma_batch,
+                hid_states_batch,
+                masks_batch
         ) in generator:
-            encoder_out_batch = self.encoder.encode(obs_history_batch)
-            commands_batch = group_commands_batch
-            actor_input = torch.cat(
-                (encoder_out_batch, obs_batch, commands_batch),
-                dim=-1,
-            )
-            actor_input.requires_grad_(True)
-            self.actor_critic.act(actor_input)
-
-            actions_log_prob_batch = self.actor_critic.get_actions_log_prob(
-                actions_batch
-            )
-
-            value_batch = self.actor_critic.evaluate(critic_obs_batch)
+            if not self.student_reinforcing:
+                self.actor_critic.act(obs_batch, obs_history_batch, critic_obs_batch, masks=masks_batch,
+                                      hidden_states=hid_states_batch[0])
+            else:
+                self.actor_critic.act_student_reinforcing(obs_batch, obs_history_batch, critic_obs_batch,
+                                                          masks=masks_batch, hidden_states=hid_states_batch[0])
+            actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+            value_batch = self.actor_critic.evaluate(critic_obs_batch, masks=masks_batch,
+                                                     hidden_states=hid_states_batch[1])
             mu_batch = self.actor_critic.action_mean
             sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
 
-            kl_mean = torch.tensor(0, device=self.device, requires_grad=False)
-            with torch.inference_mode():
-                kl = torch.sum(
-                    torch.log(sigma_batch / old_sigma_batch + 1.0e-5)
-                    + (
-                        torch.square(old_sigma_batch)
-                        + torch.square(old_mu_batch - mu_batch)
-                    )
-                    / (2.0 * torch.square(sigma_batch))
-                    - 0.5,
-                    axis=-1,
-                )
-                kl_mean = torch.mean(kl)
-
             # KL
-            if self.desired_kl != None and self.schedule == "adaptive":
+            if self.desired_kl is not None and self.schedule == 'adaptive':
                 with torch.inference_mode():
+                    kl = torch.sum(
+                        torch.log(sigma_batch /
+                                  old_sigma_batch +
+                                  1.e-5) +
+                        (torch.square(old_sigma_batch) +
+                         torch.square(old_mu_batch -
+                                      mu_batch)) /
+                        (2.0 *
+                         torch.square(sigma_batch)) -
+                        0.5, axis=-
+                        1)
+                    kl_mean = torch.mean(kl)
+
                     if kl_mean > self.desired_kl * 2.0:
-                        self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                        self.learning_rate = max(
+                            1e-5, self.learning_rate / 1.5)
                     elif kl_mean < self.desired_kl / 2.0 and kl_mean > 0.0:
-                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+                        self.learning_rate = min(
+                            1e-2, self.learning_rate * 1.5)
 
                     for param_group in self.optimizer.param_groups:
-                        param_group["lr"] = self.learning_rate
-
-            if self.desired_kl != None and self.early_stop:
-                if kl_mean > self.desired_kl * 1.5:
-                    print("early stop, num_updates =", num_updates)
-                    break
+                        param_group['lr'] = self.learning_rate
 
             # Surrogate loss
-            ratio = torch.exp(
-                actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch)
-            )
-            # print(ratio)
+            ratio = torch.exp(actions_log_prob_batch -
+                              torch.squeeze(old_actions_log_prob_batch))
             surrogate = -torch.squeeze(advantages_batch) * ratio
             surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(
-                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
-            )
+                ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
             surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
             # Value function loss
             if self.use_clipped_value_loss:
-                value_clipped = target_values_batch + (
-                    value_batch - target_values_batch
-                ).clamp(-self.clip_param, self.clip_param)
+                value_clipped = target_values_batch + \
+                                (value_batch - target_values_batch).clamp(-self.clip_param, self.clip_param)
                 value_losses = (value_batch - returns_batch).pow(2)
                 value_losses_clipped = (value_clipped - returns_batch).pow(2)
-                value_loss = torch.max(value_losses, value_losses_clipped).mean()
+                value_loss = torch.max(
+                    value_losses, value_losses_clipped).mean()
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
 
-            entropy_batch_mean = entropy_batch.mean()
-
-            # Gradient penalty
-            grad_penalty = self._calc_grad_penalty([actor_input], actions_log_prob_batch)
-
-            loss = (
-                surrogate_loss
-                + self.value_loss_coef * value_loss
-                - self.entropy_coef * entropy_batch_mean
-                + self.grad_coef * grad_penalty
-            )
-
-            if self.anneal_lr:
-                frac = 1.0 - num_updates / (
-                    self.num_learning_epochs * self.num_mini_batches
-                )
-                self.optimizer.param_groups[0]["lr"] = frac * self.learning_rate
+            loss = surrogate_loss + self.value_loss_coef * \
+                   value_loss - self.entropy_coef * entropy_batch.mean()
 
             # Gradient step
             self.optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad_norm_(
+                self.actor_critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
 
-            num_updates += 1
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
-            mean_grad_penalty += grad_penalty.item()
-            mean_kl += kl_mean.item()
 
-        num_updates_extra = 0
-        mean_extra_loss = 0
-        if self.extra_optimizer is not None:
-            generator = self.storage.encoder_mini_batch_generator(
-                self.num_mini_batches, self.num_learning_epochs
-            )
-            for (
-                next_obs_batch,
-                critic_obs_batch,
-                obs_history_batch,
-            ) in generator:
-                if self.encoder.is_mlp_encoder:
-                    self.encoder.encode(obs_history_batch)
-                    encode_batch = self.encoder.get_encoder_out()
+            # extra gradient step for the proprioperceptive encoder training
+            if not self.student_reinforcing:
+                for epoch in range(self.num_proprio_encoder_substeps):
+                    proprio_latent_batch = self.actor_critic.proprio_encode(obs_history_batch)
+                    privileged_latent_batch = self.actor_critic.privileged_encode(critic_obs_batch).detach()
+                    proprio_extra_loss = F.mse_loss(F.normalize(privileged_latent_batch, p=2, dim=-1),
+                                                    F.normalize(proprio_latent_batch, p=2, dim=-1))
 
-                if self.encoder.is_mlp_encoder:
-                    extra_loss = (
-                        (encode_batch[:, 0:3] - critic_obs_batch[:, 0:3]).pow(2).mean()
-                    )
-                else:
-                    extra_loss = torch.zeros_like(value_loss)
+                    self.extra_optimizer.zero_grad()
+                    proprio_extra_loss.backward()
+                    nn.utils.clip_grad_norm_(
+                        self.actor_critic.parameters(), self.max_grad_norm)
+                    self.extra_optimizer.step()
 
-                self.extra_optimizer.zero_grad()
-                extra_loss.backward()
-                self.extra_optimizer.step()
+                    mean_proprio_extra_loss += proprio_extra_loss.item()
 
-                num_updates_extra += 1
-                mean_extra_loss += extra_loss.item()
-
+        num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
-        if num_updates_extra > 0:
-            mean_extra_loss /= num_updates
         mean_surrogate_loss /= num_updates
-        mean_grad_penalty /= num_updates
-        mean_kl /= num_updates
+        num_updates_extra = self.num_learning_epochs * self.num_mini_batches * self.num_proprio_encoder_substeps
+        if num_updates_extra > 0:
+            mean_proprio_extra_loss /= num_updates_extra
         self.storage.clear()
 
-        return (mean_value_loss, mean_extra_loss, mean_surrogate_loss, mean_grad_penalty, mean_kl)
+        return mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss
