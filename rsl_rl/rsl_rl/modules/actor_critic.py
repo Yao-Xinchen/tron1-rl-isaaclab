@@ -57,7 +57,9 @@ class Encoder(nn.Module):
         self.encoder = nn.Sequential(*encoder_layers)
     
     def forward(self, x):
-        return self.encoder(x)
+        latent = self.encoder(x)
+        latent = nn.functional.normalize(latent, p=2, dim=-1)
+        return latent
 
 
 class ActorCritic(nn.Module):
@@ -71,7 +73,7 @@ class ActorCritic(nn.Module):
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         encoder_hidden_dims=[512, 256, 128],
-        encoder_latent_dim=32, # encoder latent vector 维度
+        encoder_latent_dim=32, # encoder latent vector
         activation='elu',
         init_noise_std=1.0,
         **kwargs,
@@ -156,13 +158,11 @@ class ActorCritic(nn.Module):
 
     def update_distribution(self, observations, observations_history, critic_observations):
         latent = self.privileged_encoder(critic_observations)
-        latent = nn.functional.normalize(latent, p=2, dim=-1)
         mean = self.actor(torch.cat((observations, latent), dim=1))
         self.distribution = Normal(mean, mean*0. + self.std)
         
     def update_distribution_student_reinforcing(self, observations, observations_history, critic_observations):
         latent = self.proprioceptive_encoder(observations_history)
-        latent = nn.functional.normalize(latent, p=2, dim=-1)
         mean = self.actor(torch.cat((observations, latent), dim=1))
         self.distribution = Normal(mean, mean*0. + self.std)
 
@@ -180,13 +180,11 @@ class ActorCritic(nn.Module):
     def act_inference(self, observations, observations_history, critic_observations):
         latent = self.proprioceptive_encoder(observations_history) # student inference
         # latent = self.privileged_encoder(critic_observations) # teacher inference
-        latent = nn.functional.normalize(latent, p=2, dim=-1)
         actions_mean = self.actor(torch.cat((observations, latent), dim=1))
         return actions_mean
 
     def evaluate(self, critic_observations, **kwargs):
         latent = self.privileged_encoder(critic_observations)
-        latent = nn.functional.normalize(latent, p=2, dim=-1)
         value = self.critic(torch.cat((critic_observations, latent), dim=1))
         return value
 
