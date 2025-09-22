@@ -168,12 +168,14 @@ class ObservationsCfg:
 
         # robot base measurements
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel,clip=(-100.0, 100.0),scale=1.0,)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=1.0,)
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=0.25,)
         proj_gravity = ObsTerm(func=mdp.projected_gravity,clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel, clip=(-100.0, 100.0), scale=1.0,)
-        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=1.0,)
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
+                            noise=GaussianNoise(mean=0.0, std=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.05)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
@@ -185,21 +187,21 @@ class ObservationsCfg:
         heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
         
         # Privileged observation
-        robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque)
-        robot_joint_acc = ObsTerm(func=mdp.robot_joint_acc)
+        robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque, scale=0.01)
+        robot_joint_acc = ObsTerm(func=mdp.robot_joint_acc, scale=0.1)
         feet_lin_vel = ObsTerm(
-            func=mdp.feet_lin_vel, params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*")}
+            func=mdp.feet_lin_vel, params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*")}, scale=0.1
         )
-        robot_mass = ObsTerm(func=mdp.robot_mass)
-        robot_inertia = ObsTerm(func=mdp.robot_inertia)
-        robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos)
-        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness)
-        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping)
-        robot_pos = ObsTerm(func=mdp.robot_pos)
-        robot_vel = ObsTerm(func=mdp.robot_vel)
-        robot_material_properties = ObsTerm(func=mdp.robot_material_properties)
+        robot_mass = ObsTerm(func=mdp.robot_mass, scale=0.1)
+        robot_inertia = ObsTerm(func=mdp.robot_inertia, scale=5.0)
+        robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos, scale=1.0)
+        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.01)
+        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
+        robot_pos = ObsTerm(func=mdp.robot_pos, scale=0.1)
+        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.1)
+        robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
         feet_contact_force = ObsTerm(
-            func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}
+            func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}, scale=0.001
         )
 
         def __post_init__(self):
