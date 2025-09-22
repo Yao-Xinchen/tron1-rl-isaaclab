@@ -63,10 +63,10 @@ class WFBaseEnvCfg_PLAY(WFBaseEnvCfg):
 class WFBlindFlatEnvCfg(WFBaseEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-
-        self.scene.height_scanner = None
-        self.observations.policy.heights = None
-        self.observations.critic.heights = None
+        #
+        # self.scene.height_scanner = None
+        # self.observations.policy.heights = None
+        # self.observations.critic.heights = None
 
         self.curriculum.terrain_levels = None
 

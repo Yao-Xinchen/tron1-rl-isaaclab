@@ -66,7 +66,14 @@ class WFSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = WHEELFOOT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     # height sensors
-    height_scanner: RayCasterCfg = MISSING
+    height_scanner: RayCasterCfg = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_Link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=(1.6, 1.0)),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
 
     # contact sensors
     contact_forces = ContactSensorCfg(
