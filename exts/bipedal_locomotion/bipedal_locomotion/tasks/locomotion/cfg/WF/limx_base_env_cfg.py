@@ -142,6 +142,10 @@ class ObservationsCfg:
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
       
+        # commands
+        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
+        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -166,7 +170,7 @@ class ObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
-            self.history_length = 10
+            self.history_length = 20
             self.flatten_history_dim = False
 
     @configclass
@@ -214,15 +218,9 @@ class ObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
-    
-    @configclass
-    class CommandsObsCfg(ObsGroup):
-        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
-        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
 
     policy: PolicyCfg = PolicyCfg()
     critic: CriticCfg = CriticCfg()
-    commands: CommandsObsCfg = CommandsObsCfg()
     obsHistory: HistoryObsCfg = HistoryObsCfg()
 
 
