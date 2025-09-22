@@ -201,7 +201,6 @@ def base_commands_b(
         ], dim=-1
     )
 
-
 def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:
     base_pose_command = env.command_manager.get_term("base_pose")
     return base_pose_command.decrease_vel.unsqueeze(-1)

@@ -31,7 +31,6 @@ class WFBaseEnvCfg(WFEnvCfg):
         self.scene.robot = WHEELFOOT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
         self.events.add_base_mass.params["asset_cfg"].body_names = "base_Link"
-        self.events.add_base_mass.params["mass_distribution_params"] = (-1.0, 2.0)
 
         self.terminations.base_contact.params["sensor_cfg"].body_names = "base_Link"
         
