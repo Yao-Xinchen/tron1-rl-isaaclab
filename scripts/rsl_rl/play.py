@@ -98,45 +98,27 @@ def main():
     ppo_runner.load(resume_path)
 
     # obtain the trained policy for inference
-    policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
-    encoder = ppo_runner.get_inference_encoder(device=env.unwrapped.device)
+    student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
+    teacher_policy = ppo_runner.get_inference_policy_teacher(device=env.unwrapped.device)
 
-    # export policy to onnx
-    if EXPORT_POLICY:
-        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-        export_policy_as_jit(
-            ppo_runner.alg.actor_critic, export_model_dir
-        )
-        print("Exported policy as jit script to: ", export_model_dir)
-        export_mlp_as_onnx(
-            ppo_runner.alg.actor_critic.actor, 
-            export_model_dir, 
-            "policy",
-            [1, ppo_runner.alg.actor_critic.num_actor_obs],
-        )
-        export_mlp_as_onnx(
-            ppo_runner.alg.encoder,
-            export_model_dir,
-            "encoder",
-            [1, ppo_runner.alg.encoder.num_input_dim],
-        )
     # reset environment
     obs, obs_dict = env.get_observations()
     obs_history = obs_dict["observations"].get("obsHistory")
     obs_history = obs_history.flatten(start_dim=1)
-    commands = obs_dict["observations"].get("commands") 
+    critic_obs = obs_dict["observations"].get("critic")
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            est = encoder(obs_history)
-            actions = policy(torch.cat((est, obs, commands), dim=-1).detach())
+            # actions = student_policy(obs, obs_history)
+            actions = teacher_policy(obs, critic_obs)
             # env stepping
             obs, _, _, infos = env.step(actions)
             obs_history = infos["observations"].get("obsHistory")
             obs_history = obs_history.flatten(start_dim=1)
-            commands = infos["observations"].get("commands") 
+            critic_obs = infos["observations"].get("critic")
 
     # close the simulator
     env.close()

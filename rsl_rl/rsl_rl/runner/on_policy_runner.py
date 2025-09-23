@@ -263,8 +263,14 @@ class OnPolicyRunner:
         self.current_learning_iteration = loaded_dict['iter']
         return loaded_dict['infos']
 
-    def get_inference_policy(self, device=None):
+    def get_inference_policy_student(self, device=None):
         self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
         if device is not None:
             self.alg.actor_critic.to(device)
-        return self.alg.actor_critic.act_inference
+        return self.alg.actor_critic.act_inference_student
+
+    def get_inference_policy_teacher(self, device=None):
+        self.alg.actor_critic.eval()
+        if device is not None:
+            self.alg.actor_critic.to(device)
+        return self.alg.actor_critic.act_inference_teacher
