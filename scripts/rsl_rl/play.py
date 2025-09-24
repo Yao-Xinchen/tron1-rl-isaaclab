@@ -112,8 +112,8 @@ def main():
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            # actions = student_policy(obs, obs_history)
-            actions = teacher_policy(obs, critic_obs)
+            actions = student_policy(obs, obs_history)
+            # actions = teacher_policy(obs, critic_obs)
             # env stepping
             obs, _, _, infos = env.step(actions)
             obs_history = infos["observations"].get("obsHistory")

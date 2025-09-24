@@ -82,8 +82,8 @@ def pos_commands_ranges_level(
     command_cfg: mdp.UniformPoseCommandCfg = env.command_manager.get_term(command_name).cfg
     x = command_cfg.ranges.pos_x[1]
     if (env.common_step_counter + 1) % update_interval == 0:
-        x = command_cfg.ranges.pos_x[1] + 0.05
-        y = command_cfg.ranges.pos_y[1] + 0.05
+        x = command_cfg.ranges.pos_x[1] + 0.1
+        y = command_cfg.ranges.pos_y[1] + 0.1
         x = min(x, max_range["pos_x"][1])
         y = min(y, max_range["pos_y"][1])
         command_cfg.ranges.pos_x = (-x, x)
