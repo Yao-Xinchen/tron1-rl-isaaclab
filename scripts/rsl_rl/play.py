@@ -53,94 +53,6 @@ import bipedal_locomotion  # noqa: F401
 from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlPpoAlgorithmMlpCfg, export_mlp_as_onnx, export_policy_as_jit
 
 
-class ONNXStudentPolicy:
-    def __init__(self, onnx_path, device="cpu"):
-        if not os.path.exists(onnx_path):
-            raise FileNotFoundError(f"ONNX model file not found: {onnx_path}")
-
-        self.device = device
-        try:
-            self.session = ort.InferenceSession(onnx_path)
-            self.input_names = [inp.name for inp in self.session.get_inputs()]
-            self.output_names = [out.name for out in self.session.get_outputs()]
-            print(f"[INFO] Successfully loaded ONNX model from: {onnx_path}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to load ONNX model: {e}")
-
-    def __call__(self, obs, obs_history, commands):
-        try:
-            obs_np = obs.detach().cpu().numpy()
-            obs_history_np = obs_history.detach().cpu().numpy()
-            commands_np = commands.detach().cpu().numpy()
-
-            inputs = {
-                self.input_names[0]: obs_np,
-                self.input_names[1]: obs_history_np,
-                self.input_names[2]: commands_np
-            }
-
-            outputs = self.session.run(self.output_names, inputs)
-            actions = torch.from_numpy(outputs[0]).to(self.device)
-
-            return actions
-        except Exception as e:
-            raise RuntimeError(f"ONNX inference failed: {e}")
-
-
-def export_student_policy_as_onnx(ppo_runner, path, obs_shape, obs_history_shape):
-    import copy
-    os.makedirs(path, exist_ok=True)
-    export_path = os.path.join(path, "student_policy.onnx")
-
-    # Get the actor_critic model directly
-    actor_critic = ppo_runner.alg.actor_critic
-
-    class StudentPolicyWrapper(torch.nn.Module):
-        def __init__(self, actor_critic):
-            super().__init__()
-            # Copy the necessary components
-            self.proprioceptive_encoder = copy.deepcopy(actor_critic.proprioceptive_encoder)
-            self.actor = copy.deepcopy(actor_critic.actor)
-
-        def forward(self, obs, obs_hist, commands):
-            # Replicate the act_inference_student logic
-            latent = self.proprioceptive_encoder(obs_hist)
-            actions_mean = self.actor(torch.cat((commands, obs, latent), dim=1))
-            return actions_mean
-
-    # Create wrapper and move to CPU for export
-    policy_wrapper = StudentPolicyWrapper(actor_critic).to("cpu")
-    policy_wrapper.eval()
-
-    # Create dummy inputs with proper shapes (batch size 1, dynamic axes will handle variable batch sizes)
-    dummy_obs = torch.randn(1, obs_shape)
-    dummy_obs_hist = torch.randn(1, obs_history_shape)
-    dummy_commands = torch.randn(1, ppo_runner.num_cmds)
-
-    input_names = ["obs", "obs_hist", "commands"]
-    output_names = ["action"]
-
-    # Use dynamic axes to support variable batch size
-    dynamic_axes = {
-        "obs": {0: "batch_size"},
-        "obs_hist": {0: "batch_size"},
-        "commands": {0: "batch_size"},
-        "action": {0: "batch_size"}
-    }
-
-    torch.onnx.export(
-        policy_wrapper,
-        (dummy_obs, dummy_obs_hist, dummy_commands),
-        export_path,
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes=dynamic_axes,
-        export_params=True,
-        opset_version=13,
-    )
-    print(f"Exported student policy as ONNX to: {export_path}")
-
-
 def main():
     """Play with RSL-RL agent."""
     # parse configuration
@@ -189,27 +101,24 @@ def main():
     # obtain the trained policy for inference
     teacher_policy = ppo_runner.get_inference_policy_teacher(device=env.unwrapped.device)
 
-    # export student policy if requested
+    # export policy to onnx
     if EXPORT_POLICY:
-        obs_shape = ppo_runner.num_obs
-        obs_history_shape = ppo_runner.num_obs_history
-        export_student_policy_as_onnx(
-            ppo_runner,
-            os.path.join(log_dir, "exported"),
-            obs_shape,
-            obs_history_shape
+        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+        export_mlp_as_onnx(
+            ppo_runner.alg.actor_critic.actor,
+            export_model_dir,
+            "policy",
+            ppo_runner.alg.actor_critic.actor_input_dim,
         )
-        # Load ONNX student policy for inference
-        onnx_path = os.path.join(log_dir, "exported", "student_policy.onnx")
-        try:
-            student_policy = ONNXStudentPolicy(onnx_path, device=env.unwrapped.device)
-        except (FileNotFoundError, RuntimeError) as e:
-            print(f"[WARNING] Failed to load ONNX model: {e}")
-            print("[INFO] Falling back to PyTorch student policy")
-            student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
-    else:
-        # Fall back to PyTorch student policy
-        student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
+        export_mlp_as_onnx(
+            ppo_runner.alg.actor_critic.proprioceptive_encoder,
+            export_model_dir,
+            "encoder",
+            ppo_runner.alg.actor_critic.encoder_input_dim,
+        )
+
+    # Fall back to PyTorch student policy
+    student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
 
     # reset environment
     obs, obs_dict = env.get_observations()
