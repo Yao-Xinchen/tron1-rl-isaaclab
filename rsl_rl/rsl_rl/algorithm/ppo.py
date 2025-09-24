@@ -123,7 +123,8 @@ class PPO:
         actor_obs_shape,
         obs_history_shape,
         critic_obs_shape,
-        action_shape
+        action_shape,
+        commands_shape
     ):
         self.storage = RolloutStorage(
             num_envs,
@@ -132,6 +133,7 @@ class PPO:
             obs_history_shape,
             critic_obs_shape,
             action_shape,
+            commands_shape,
             self.device)
 
     def test_mode(self):
@@ -140,13 +142,13 @@ class PPO:
     def train_mode(self):
         self.actor_critic.train()
 
-    def act(self, obs, obs_hisotry, critic_obs):
+    def act(self, obs, obs_hisotry, critic_obs, commands):
         if self.actor_critic.is_recurrent:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
-        self.transition.actions = self.actor_critic.act(obs, obs_hisotry, critic_obs).detach()
+        self.transition.actions = self.actor_critic.act(obs, obs_hisotry, critic_obs, commands).detach()
         self.transition.values = self.actor_critic.evaluate(
-            critic_obs).detach()
+            critic_obs, commands).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(
             self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
@@ -155,6 +157,7 @@ class PPO:
         self.transition.observations = obs.clone()
         self.transition.observations_history = obs_hisotry.clone()
         self.transition.critic_observations = critic_obs.clone()
+        self.transition.commands = commands.clone()
         return self.transition.actions
 
     def process_env_step(self, rewards, dones, infos):
@@ -171,8 +174,8 @@ class PPO:
         self.transition.clear()
         self.actor_critic.reset(dones)
 
-    def compute_returns(self, last_critic_obs):
-        last_values = self.actor_critic.evaluate(last_critic_obs).detach()
+    def compute_returns(self, last_critic_obs, last_commands):
+        last_values = self.actor_critic.evaluate(last_critic_obs, last_commands).detach()
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
     def update(self):
@@ -189,6 +192,7 @@ class PPO:
             obs_batch,
             obs_history_batch,
             critic_obs_batch,
+            commands_batch,
             actions_batch,
             target_values_batch,
             advantages_batch,
@@ -196,15 +200,15 @@ class PPO:
             old_actions_log_prob_batch,
             old_mu_batch,
             old_sigma_batch,
-            hid_states_batch, 
+            hid_states_batch,
             masks_batch
         ) in generator:
             if not self.student_reinforcing:
-                self.actor_critic.act(obs_batch, obs_history_batch, critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                self.actor_critic.act(obs_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
             else:
-                self.actor_critic.act_student_reinforcing(obs_batch, obs_history_batch, critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                self.actor_critic.act_student_reinforcing(obs_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
             actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
-            value_batch = self.actor_critic.evaluate(critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
+            value_batch = self.actor_critic.evaluate(critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
             mu_batch = self.actor_critic.action_mean
             sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
@@ -271,7 +275,7 @@ class PPO:
                 for epoch in range(self.num_proprio_encoder_substeps):
                     proprio_latent_batch = self.actor_critic.proprio_encode(obs_history_batch)
                     privileged_latent_batch = self.actor_critic.privileged_encode(critic_obs_batch).detach()
-                    proprio_extra_loss = F.mse_loss(F.normalize(privileged_latent_batch, p=2, dim=-1), F.normalize(proprio_latent_batch, p=2, dim=-1))
+                    proprio_extra_loss = F.mse_loss(privileged_latent_batch, proprio_latent_batch)
 
                     self.extra_optimizer.zero_grad()
                     proprio_extra_loss.backward()

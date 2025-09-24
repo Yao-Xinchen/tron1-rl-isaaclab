@@ -70,6 +70,7 @@ class ActorCritic(nn.Module):
         num_critic_obs,
         num_actions,
         num_obs_history,
+        num_cmds,
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         encoder_hidden_dims=[512, 256, 128],
@@ -85,15 +86,23 @@ class ActorCritic(nn.Module):
         activation = get_activation(activation)
 
         # Proprioceptive Encoder
-        self.proprioceptive_encoder = Encoder(input_dim=num_obs_history, hidden_dims=encoder_hidden_dims,
-                                                    latent_dim=encoder_latent_dim, activation="elu")
+        self.proprioceptive_encoder = Encoder(
+            input_dim=num_obs_history,
+            hidden_dims=encoder_hidden_dims,
+            latent_dim=encoder_latent_dim,
+            activation="elu"
+        )
         # Privileged Encoder
-        self.privileged_encoder = Encoder(input_dim=num_critic_obs, hidden_dims=encoder_hidden_dims,
-                                                    latent_dim=encoder_latent_dim, activation="elu")
+        self.privileged_encoder = Encoder(
+            input_dim=num_critic_obs,
+            hidden_dims=encoder_hidden_dims,
+            latent_dim=encoder_latent_dim,
+            activation="elu"
+        )
         
         # Policy
         actor_layers = []
-        mlp_input_dim_a = num_actor_obs + encoder_latent_dim  # proprio + encoded latent 
+        mlp_input_dim_a = (num_cmds + num_actor_obs) + encoder_latent_dim  # proprio + encoded latent
         actor_layers.append(nn.Linear(mlp_input_dim_a, actor_hidden_dims[0]))
         actor_layers.append(activation)
         for l in range(len(actor_hidden_dims)):
@@ -106,7 +115,7 @@ class ActorCritic(nn.Module):
 
         # Value function
         critic_layers = []
-        mlp_input_dim_c = num_critic_obs + encoder_latent_dim
+        mlp_input_dim_c = (num_cmds + num_critic_obs) + encoder_latent_dim
         critic_layers.append(nn.Linear(mlp_input_dim_c, critic_hidden_dims[0]))
         critic_layers.append(activation)
         for l in range(len(critic_hidden_dims)):
@@ -156,40 +165,40 @@ class ActorCritic(nn.Module):
     def entropy(self):
         return self.distribution.entropy().sum(dim=-1)
 
-    def update_distribution(self, observations, observations_history, critic_observations):
+    def update_distribution(self, observations, observations_history, critic_observations, commands):
         latent = self.privileged_encoder(critic_observations)
-        mean = self.actor(torch.cat((observations, latent), dim=1))
+        mean = self.actor(torch.cat((commands, observations, latent), dim=1))
         self.distribution = Normal(mean, mean*0. + self.std)
         
-    def update_distribution_student_reinforcing(self, observations, observations_history, critic_observations):
+    def update_distribution_student_reinforcing(self, observations, observations_history, critic_observations, commands):
         latent = self.proprioceptive_encoder(observations_history)
-        mean = self.actor(torch.cat((observations, latent), dim=1))
+        mean = self.actor(torch.cat((commands, observations, latent), dim=1))
         self.distribution = Normal(mean, mean*0. + self.std)
 
-    def act(self, observations, observations_history, critic_observations, **kwargs):
-        self.update_distribution(observations, observations_history, critic_observations)
+    def act(self, observations, observations_history, critic_observations, commands, **kwargs):
+        self.update_distribution(observations, observations_history, critic_observations, commands)
         return self.distribution.sample()
     
-    def act_student_reinforcing(self, observations, observations_history, critic_observations):
-        self.update_distribution_student_reinforcing(observations, observations_history, critic_observations)
+    def act_student_reinforcing(self, observations, observations_history, critic_observations, commands):
+        self.update_distribution_student_reinforcing(observations, observations_history, critic_observations, commands)
         return self.distribution.sample()
     
     def get_actions_log_prob(self, actions):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
-    def act_inference_student(self, observations, observations_history):
+    def act_inference_student(self, observations, observations_history, commands):
         latent = self.proprioceptive_encoder(observations_history) # student inference
-        actions_mean = self.actor(torch.cat((observations, latent), dim=1))
+        actions_mean = self.actor(torch.cat((commands, observations, latent), dim=1))
         return actions_mean
 
-    def act_inference_teacher(self, observations, critic_observations):
+    def act_inference_teacher(self, observations, critic_observations, commands):
         latent = self.privileged_encoder(critic_observations)
-        actions_mean = self.actor(torch.cat((observations, latent), dim=1))
+        actions_mean = self.actor(torch.cat((commands, observations, latent), dim=1))
         return actions_mean
 
-    def evaluate(self, critic_observations, **kwargs):
+    def evaluate(self, critic_observations, commands, **kwargs):
         latent = self.privileged_encoder(critic_observations)
-        value = self.critic(torch.cat((critic_observations, latent), dim=1))
+        value = self.critic(torch.cat((commands, critic_observations, latent), dim=1))
         return value
 
     def proprio_encode(self, observations_history):

@@ -67,14 +67,16 @@ class ONNXStudentPolicy:
         except Exception as e:
             raise RuntimeError(f"Failed to load ONNX model: {e}")
 
-    def __call__(self, obs, obs_history):
+    def __call__(self, obs, obs_history, commands):
         try:
             obs_np = obs.detach().cpu().numpy()
             obs_history_np = obs_history.detach().cpu().numpy()
+            commands_np = commands.detach().cpu().numpy()
 
             inputs = {
                 self.input_names[0]: obs_np,
-                self.input_names[1]: obs_history_np
+                self.input_names[1]: obs_history_np,
+                self.input_names[2]: commands_np
             }
 
             outputs = self.session.run(self.output_names, inputs)
@@ -100,10 +102,10 @@ def export_student_policy_as_onnx(ppo_runner, path, obs_shape, obs_history_shape
             self.proprioceptive_encoder = copy.deepcopy(actor_critic.proprioceptive_encoder)
             self.actor = copy.deepcopy(actor_critic.actor)
 
-        def forward(self, obs, obs_hist):
+        def forward(self, obs, obs_hist, commands):
             # Replicate the act_inference_student logic
             latent = self.proprioceptive_encoder(obs_hist)
-            actions_mean = self.actor(torch.cat((obs, latent), dim=1))
+            actions_mean = self.actor(torch.cat((commands, obs, latent), dim=1))
             return actions_mean
 
     # Create wrapper and move to CPU for export
@@ -113,20 +115,22 @@ def export_student_policy_as_onnx(ppo_runner, path, obs_shape, obs_history_shape
     # Create dummy inputs with proper shapes (batch size 1, dynamic axes will handle variable batch sizes)
     dummy_obs = torch.randn(1, obs_shape)
     dummy_obs_hist = torch.randn(1, obs_history_shape)
+    dummy_commands = torch.randn(1, ppo_runner.num_cmds)
 
-    input_names = ["obs", "obs_hist"]
+    input_names = ["obs", "obs_hist", "commands"]
     output_names = ["action"]
 
     # Use dynamic axes to support variable batch size
     dynamic_axes = {
         "obs": {0: "batch_size"},
         "obs_hist": {0: "batch_size"},
+        "commands": {0: "batch_size"},
         "action": {0: "batch_size"}
     }
 
     torch.onnx.export(
         policy_wrapper,
-        (dummy_obs, dummy_obs_hist),
+        (dummy_obs, dummy_obs_hist, dummy_commands),
         export_path,
         input_names=input_names,
         output_names=output_names,
@@ -212,19 +216,21 @@ def main():
     obs_history = obs_dict["observations"].get("obsHistory")
     obs_history = obs_history.flatten(start_dim=1)
     critic_obs = obs_dict["observations"].get("critic")
+    commands = obs_dict["observations"].get("commands")
 
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            actions = student_policy(obs, obs_history)
-            # actions = teacher_policy(obs, critic_obs)
+            actions = student_policy(obs, obs_history, commands)
+            # actions = teacher_policy(obs, critic_obs, commands)
             # env stepping
             obs, _, _, infos = env.step(actions)
             obs_history = infos["observations"].get("obsHistory")
             obs_history = obs_history.flatten(start_dim=1)
             critic_obs = infos["observations"].get("critic")
+            commands = infos["observations"].get("commands")
 
     # close the simulator
     env.close()

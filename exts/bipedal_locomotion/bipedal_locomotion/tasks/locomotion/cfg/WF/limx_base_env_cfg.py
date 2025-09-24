@@ -125,6 +125,10 @@ class ActionsCfg:
 class ObservationsCfg:
     """Observation specifications for the MDP"""
 
+    class CommandsObsCfg(ObsGroup):
+        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
+        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
+
     @configclass
     class PolicyCfg(ObsGroup):
         """Observation for policy group"""
@@ -141,10 +145,6 @@ class ObservationsCfg:
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
-
-        # commands
-        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
-        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -176,11 +176,6 @@ class ObservationsCfg:
     @configclass
     class CriticCfg(ObsGroup):
         """Observation for critic group"""
-
-        # commands
-        base_pose_commands = ObsTerm(func=mdp.base_commands_b)
-        base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
-
         # robot base measurements
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel,clip=(-100.0, 100.0),scale=1.0,)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=0.25,)
@@ -223,6 +218,7 @@ class ObservationsCfg:
             self.enable_corruption = False
             self.concatenate_terms = True
 
+    commands: CommandsObsCfg = CommandsObsCfg()
     policy: PolicyCfg = PolicyCfg()
     critic: CriticCfg = CriticCfg()
     obsHistory: HistoryObsCfg = HistoryObsCfg()
@@ -536,7 +532,7 @@ class WFEnvCfg(ManagerBasedRLEnvCfg):
         """Post initialization"""
         self.decimation = 4
         self.episode_length_s = 20.0
-        self.sim.render_interval = 2 * self.decimation
+        self.sim.render_interval = 2
         # simulation settings
         self.sim.dt = 0.005
         self.seed = 42

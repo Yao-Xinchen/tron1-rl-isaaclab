@@ -51,6 +51,7 @@ class OnPolicyRunner:
 
         obs, extras = self.env.get_observations()
         self.num_obs = obs.shape[1]
+        self.num_cmds = extras["observations"]["commands"].shape[1]
         self.num_obs_history = extras["observations"]["obsHistory"].flatten(start_dim=1).shape[1]
         self.num_critic_obs = extras["observations"]["critic"].shape[1]
         actor_critic_class = ActorCritic
@@ -59,6 +60,7 @@ class OnPolicyRunner:
             self.num_critic_obs,
             self.env.num_actions,
             self.num_obs_history,
+            self.num_cmds,
             **self.policy_cfg,
         ).to(self.device)
         alg_class = PPO
@@ -75,7 +77,8 @@ class OnPolicyRunner:
             [self.num_obs],
             [self.num_obs_history],
             [self.num_critic_obs],
-            [self.env.num_actions]
+            [self.env.num_actions],
+            [self.num_cmds]
         )
 
         # Log
@@ -99,7 +102,8 @@ class OnPolicyRunner:
         obs_history = extras["observations"].get("obsHistory")
         obs_history = obs_history.flatten(start_dim=1)
         critic_obs = extras["observations"].get("critic")
-        obs, obs_history, critic_obs = obs.to(self.device), obs_history.to(self.device), critic_obs.to(self.device)
+        commands = extras["observations"].get("commands")
+        obs, obs_history, critic_obs, commands = obs.to(self.device), obs_history.to(self.device), critic_obs.to(self.device), commands.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         ep_infos = []
@@ -116,15 +120,17 @@ class OnPolicyRunner:
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
-                    actions = self.alg.act(obs, obs_history, critic_obs)
+                    actions = self.alg.act(obs, obs_history, critic_obs, commands)
                     (obs, rewards, dones, infos) = self.env.step(actions)
                     critic_obs = infos["observations"]["critic"]
                     obs_history = infos["observations"]["obsHistory"].flatten(start_dim=1)
+                    commands = infos["observations"]["commands"]
 
-                    obs, obs_history, critic_obs, rewards, dones = (
+                    obs, obs_history, critic_obs, commands, rewards, dones = (
                         obs.to(self.device),
                         obs_history.to(self.device),
                         critic_obs.to(self.device), # critic_obs.to(self.device),
+                        commands.to(self.device),
                         rewards.to(self.device),
                         dones.to(self.device),
                     )
@@ -153,7 +159,7 @@ class OnPolicyRunner:
 
                 # Learning step
                 start = stop
-                self.alg.compute_returns(critic_obs)
+                self.alg.compute_returns(critic_obs, commands)
 
             mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss = self.alg.update()
             stop = time.time()
@@ -250,9 +256,6 @@ class OnPolicyRunner:
             'iter': self.current_learning_iteration,
             'infos': infos,
         }, path)
-        # 保存encoder
-        # torch.save(self.alg.actor_critic.encoder.state_dict(), os.path.dirname(path)+'terrain_encoder.pt')
-        # legged gym 中已经包含了将 模型保存为jit script的功能
 
     def load(self, path, load_optimizer=False):
         loaded_dict = torch.load(path)

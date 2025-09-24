@@ -40,6 +40,7 @@ class RolloutStorage:
             self.observations = None
             self.critic_observations = None
             self.observations_history = None
+            self.commands = None
             self.actions = None
             self.rewards = None
             self.dones = None
@@ -60,6 +61,7 @@ class RolloutStorage:
         obs_history_shape,
         privileged_obs_shape,
         actions_shape,
+        commands_shape,
         device="cpu",
     ):
 
@@ -69,6 +71,7 @@ class RolloutStorage:
         self.obs_history_shape = obs_history_shape
         self.privileged_obs_shape = privileged_obs_shape
         self.actions_shape = actions_shape
+        self.commands_shape = commands_shape
 
         # Core
         self.observations = torch.zeros(
@@ -84,6 +87,9 @@ class RolloutStorage:
                 )
         else:
             self.privileged_observations = None
+        self.commands = torch.zeros(
+            num_transitions_per_env, num_envs, *commands_shape, device=self.device
+        )
         self.rewards = torch.zeros(
             num_transitions_per_env, num_envs, 1, device=self.device
         )
@@ -132,6 +138,7 @@ class RolloutStorage:
         if self.privileged_observations is not None:
             self.privileged_observations[self.step].copy_(
                 transition.critic_observations)
+        self.commands[self.step].copy_(transition.commands)
         self.actions[self.step].copy_(transition.actions)
         self.rewards[self.step].copy_(transition.rewards.view(-1, 1))
         self.dones[self.step].copy_(transition.dones.view(-1, 1))
@@ -214,7 +221,7 @@ class RolloutStorage:
             critic_observations = self.privileged_observations.flatten(0, 1)
         else:
             critic_observations = observations
-
+        commands = self.commands.flatten(0, 1)
         actions = self.actions.flatten(0, 1)
         values = self.values.flatten(0, 1)
         returns = self.returns.flatten(0, 1)
@@ -232,6 +239,7 @@ class RolloutStorage:
                 obs_batch = observations[batch_idx]
                 obs_history_batch = observations_history[batch_idx]
                 critic_observations_batch = critic_observations[batch_idx]
+                commands_batch = commands[batch_idx]
                 actions_batch = actions[batch_idx]
                 target_values_batch = values[batch_idx]
                 returns_batch = returns[batch_idx]
@@ -239,7 +247,7 @@ class RolloutStorage:
                 advantages_batch = advantages[batch_idx]
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
-                yield obs_batch, obs_history_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
+                yield obs_batch, obs_history_batch, critic_observations_batch, commands_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
                     old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (
                         None, None), None
 
