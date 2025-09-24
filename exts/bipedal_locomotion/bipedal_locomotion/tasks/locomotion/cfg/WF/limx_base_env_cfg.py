@@ -190,9 +190,6 @@ class ObservationsCfg:
         # last action
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
 
-        # velocity command
-        # vel_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
-
         # heights scan
         # heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
 
@@ -207,8 +204,8 @@ class ObservationsCfg:
         robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos, scale=1.0)
         robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.01)
         robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
-        robot_pos = ObsTerm(func=mdp.robot_pos, scale=0.1)
-        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.1)
+        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.3)
+        base_height_error = ObsTerm(func=mdp.base_height_error, scale=3.0)
         robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
         feet_contact_force = ObsTerm(
             func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}, scale=0.001

@@ -38,7 +38,7 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
     model = copy.deepcopy(mlp).to("cpu")
     model.eval()
 
-    dummy_input = torch.randn(input_dim)
+    dummy_input = torch.randn(1, input_dim)
     input_names = ["mlp_input"]
     output_names = ["mlp_output"]
 
@@ -51,6 +51,7 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
         output_names=output_names,
         export_params=True,
         opset_version=13,
+        dynamic_axes={"mlp_input": {0: "batch_size"}, "mlp_output": {0: "batch_size"}},
     )
     print("Exported policy as onnx script to: ", path)
 

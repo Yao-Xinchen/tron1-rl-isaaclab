@@ -204,3 +204,16 @@ def base_commands_b(
 def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:
     base_pose_command = env.command_manager.get_term("base_pose")
     return base_pose_command.decrease_vel.unsqueeze(-1)
+
+def base_height_error(env: ManagerBasedRLEnv,
+                      asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+                      base_height_target: float = 0.9,
+                      ) -> torch.Tensor:
+    """The height of the robot base."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    foot_position = asset.data.body_pos_w[:, env._wheels_link_ids, :]
+    base_height_w = asset.data.root_link_pos_w[:, 2] - foot_position[:, :, 2].mean(dim=-1) + env._foot_radius
+
+    return base_height_w - base_height_target
