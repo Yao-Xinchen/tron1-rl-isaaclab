@@ -180,3 +180,34 @@ def joint_pos_rel_exclude_wheel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCf
     all_joints_idx = range(asset.num_joints)
     pos_idx_exclude_wheel = [i for i in all_joints_idx if i not in wheel_joints_idx]
     return asset.data.joint_pos[:, pos_idx_exclude_wheel] - asset.data.default_joint_pos[:, pos_idx_exclude_wheel]
+
+def base_height_error(env: ManagerBasedRLEnv,
+                      asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+                      base_height_target: float = 0.9,
+                      ) -> torch.Tensor:
+    """The height of the robot base."""
+    # extract the used quantities (to enable type-hinting)
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    # Check if the attributes are initialized (happens during startup events)
+    if not hasattr(env, '_wheels_link_ids') or not hasattr(env, '_foot_radius'):
+        # Return zeros if not initialized yet
+        return torch.zeros((env.num_envs, 1), device=asset.device)
+
+    foot_position = asset.data.body_pos_w[:, env._wheels_link_ids, :]
+    base_height_w = asset.data.root_link_pos_w[:, 2] - foot_position[:, :, 2].mean(dim=-1) + env._foot_radius
+
+    return (base_height_w - base_height_target).unsqueeze(1)
+
+def foot_rel_position_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")):
+    asset: Articulation = env.scene[asset_cfg.name]
+
+    # Check if the attributes are initialized (happens during startup events)
+    if not hasattr(env, '_wheels_link_ids') or not hasattr(env, '_foot_radius'):
+        # Return zeros if not initialized yet
+        return torch.zeros((env.num_envs, 6), device=asset.device)
+
+    foot_position_w = asset.data.body_pos_w[:, env._wheels_link_ids, :]
+    base_position_w = asset.data.root_pos_w
+
+    return (foot_position_w - base_position_w.unsqueeze(1)).view(env.num_envs, -1)

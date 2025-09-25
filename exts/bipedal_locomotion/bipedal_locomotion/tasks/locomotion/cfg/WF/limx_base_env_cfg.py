@@ -67,7 +67,14 @@ class WFSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = WHEELFOOT_ARM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     # height sensors
-    height_scanner: RayCasterCfg = MISSING
+    height_scanner: RayCasterCfg = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/base_Link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=(1.6, 1.0)),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
 
     # contact sensors
     contact_forces = ContactSensorCfg(
@@ -106,13 +113,16 @@ class ActionsCfg:
 
     joint_pos = mdp.JointPositionActionCfg(asset_name="robot", joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"],
                                            scale=0.5, use_default_offset=True)
-    joint_vel = mdp.JointVelocityActionCfg(asset_name="robot", joint_names=["wheel_[RL]_Joint"], 
-                                           scale=10.0, use_default_offset=True)
+    joint_vel = mdp.JointVelocityActionCfg(asset_name="robot", joint_names=["wheel_[RL]_Joint"],
+                                           scale=5.0, use_default_offset=True)
 
 
 @configclass
-class ObservarionsCfg:
+class ObservationsCfg:
     """Observation specifications for the MDP"""
+
+    class CommandsObsCfg(ObsGroup):
+        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_twist"})
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -123,35 +133,18 @@ class ObservarionsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-            params={"asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
-            )},
-        )  # 6
-
-        joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            noise=Unoise(n_min=-1.5, n_max=1.5),
-            params={"asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
-            )},
-            scale=0.1,
-        )
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
+                            noise=GaussianNoise(mean=0.0, std=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
 
-        # commands
-        velocity_commands = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_twist"})
-      
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
-    
+
     @configclass
     class HistoryObsCfg(ObsGroup):
         """Observation for policy group"""
@@ -161,84 +154,64 @@ class ObservarionsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-            params={"asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
-            )},
-        )  # 6
-
-        joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            noise=Unoise(n_min=-1.5, n_max=1.5),
-            params={"asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
-            )},
-            scale=0.1,
-        )
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
+                            noise=GaussianNoise(mean=0.0, std=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
-        
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
-            self.history_length = 15
+            self.history_length = 20
             self.flatten_history_dim = False
 
     @configclass
     class CriticCfg(ObsGroup):
         """Observation for critic group"""
-
         # robot base measurements
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel,clip=(-100.0, 100.0),scale=1.0,)
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=1.0,)
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=0.25,)
         proj_gravity = ObsTerm(func=mdp.projected_gravity,clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements
-        joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
-            )},
-        )  # 6
-        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.1,)
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
+                            noise=GaussianNoise(mean=0.0, std=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.05)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
 
-        # velocity command
-        # vel_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "base_velocity"})
-
         # heights scan
-        heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
-        
+        # heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
+
         # Privileged observation
-        robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque)
-        robot_joint_acc = ObsTerm(func=mdp.robot_joint_acc)
+        robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque, scale=0.01)
+        robot_joint_acc = ObsTerm(func=mdp.robot_joint_acc, scale=0.1)
         feet_lin_vel = ObsTerm(
-            func=mdp.feet_lin_vel, params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*")}
+            func=mdp.feet_lin_vel, params={"asset_cfg": SceneEntityCfg("robot", body_names="wheel_.*")}, scale=0.1
         )
-        robot_mass = ObsTerm(func=mdp.robot_mass)
-        robot_inertia = ObsTerm(func=mdp.robot_inertia)
-        robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos)
-        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness)
-        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping)
-        robot_pos = ObsTerm(func=mdp.robot_pos)
-        robot_vel = ObsTerm(func=mdp.robot_vel)
-        robot_material_properties = ObsTerm(func=mdp.robot_material_properties)
+        robot_mass = ObsTerm(func=mdp.robot_mass, scale=0.1)
+        robot_inertia = ObsTerm(func=mdp.robot_inertia, scale=5.0)
+        robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos, scale=1.0)
+        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.01)
+        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
+        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.3)
+        base_height_error = ObsTerm(func=mdp.base_height_error, scale=3.0)
+        foot_rel_position_w = ObsTerm(func=mdp.foot_rel_position_w, scale = 1.5)
+        robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
         feet_contact_force = ObsTerm(
-            func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}
+            func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}, scale=0.001
         )
 
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
 
+    commands: CommandsObsCfg = CommandsObsCfg()
     policy: PolicyCfg = PolicyCfg()
     critic: CriticCfg = CriticCfg()
     obsHistory: HistoryObsCfg = HistoryObsCfg()
@@ -257,80 +230,73 @@ class EventsCfg:
         },
     )
 
-    physics_material = EventTerm(
-        func=mdp.randomize_rigid_body_material,  # type: ignore
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.3, 1.5),
-            "dynamic_friction_range": (0.2, 1.2),
-            "restitution_range": (0.0, 0.0),
-            "num_buckets": 64,
-        },
-    )
-
+    # startup
     add_base_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="base_Link"),
-            # "mass_distribution_params": (-5.0, 5.0),
-            "mass_distribution_params": (-0.5, 2.0),
+            "mass_distribution_params": (-2.0, 5.0),
             "operation": "add",
         },
     )
-
-    # actuator gains randomization
-    randomize_actuator_gains = EventTerm(
-        func=mdp.randomize_actuator_gains,
+    add_link_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_[LR]_Link"),
+            "mass_distribution_params": (0.8, 1.2),
+            "operation": "scale",
+        },
+    )
+    radomize_rigid_body_mass_inertia = EventTerm(
+        func=mdp.randomize_rigid_body_mass_inertia,
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "stiffness_distribution_params": (0.8, 1.2),
-            "damping_distribution_params": (0.8, 1.2),
+            "mass_inertia_distribution_params": (0.8, 1.2),
             "operation": "scale",
+        },
+    )
+    robot_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "static_friction_range": (0.4, 1.2),
+            "dynamic_friction_range": (0.7, 0.9),
+            "restitution_range": (0.0, 1.0),
+            "num_buckets": 48,
+        },
+    )
+    robot_joint_stiffness_and_damping = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (32, 48),
+            "damping_distribution_params": (2.0, 3.0),
+            "operation": "abs",
+            "distribution": "uniform",
+        },
+    )
+    robot_center_of_mass = EventTerm(
+        func=mdp.randomize_rigid_body_coms,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "com_distribution_params": ((-0.075, 0.075), (-0.075, 0.075), (-0.075, 0.075)),
+            "operation": "add",
             "distribution": "uniform",
         },
     )
 
-    # center of mass randomization
-    randomize_base_com = EventTerm(
-        func=mdp.randomize_rigid_body_com,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="base_Link"),
-            "com_range": {"x": (-0.03, 0.03), "y": (-0.03, 0.03), "z": (-0.03, 0.03)},
-        },
-    )
-
-    # # set arm links to zero mass and inertia
-    # zero_arm_mass = EventTerm(
-    #     func=mdp.randomize_rigid_body_mass,
-    #     mode="startup",
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", body_names="link[1-7]"),
-    #         "mass_distribution_params": (0.000001, 0.000001),
-    #         "operation": "abs",
-    #         "recompute_inertia": True,
-    #     },
-    # )
-
     # reset
-    base_external_force_torque = EventTerm(
-        func=mdp.apply_external_force_torque,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="base_Link"),
-            "force_range": (0.0, 0.0),
-            "torque_range": (-0.0, 0.0),
-        },
-    )
-
-    reset_base = EventTerm(
+    reset_robot_base = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14), "roll": (-0.1, 0.1), "pitch": (-0.1, 0.1)},
+            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
             "velocity_range": {
                 "x": (-0.5, 0.5),
                 "y": (-0.5, 0.5),
@@ -343,20 +309,41 @@ class EventsCfg:
     )
 
     reset_robot_joints = EventTerm(
+        # func=mdp.reset_joints_by_scale,
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (-0.3, 0.3),
+            "position_range": (-0.2, 0.2),
             "velocity_range": (-0.5, 0.5),
         },
     )
 
-    # interval
+    # randomize_actuator_gains = EventTerm(
+    #     func=mdp.randomize_actuator_gains,
+    #     mode="reset",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+    #         "stiffness_distribution_params": (0.5, 2.0),
+    #         "damping_distribution_params": (0.5, 2.0),
+    #         "operation": "scale",
+    #         "distribution": "log_uniform",
+    #     },
+    # )
+
     push_robot = EventTerm(
-        func=mdp.push_by_setting_velocity,
+        func=mdp.apply_external_force_torque_stochastic,
         mode="interval",
-        interval_range_s=(10.0, 15.0),
-        params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
+        interval_range_s=(0.0, 0.0),
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="base_Link"),
+            "force_range": {
+                "x": (-500.0, 500.0),
+                "y": (-500.0, 500.0),
+                "z": (-0.0, 0.0),
+            },  # force = mass * dv / dt
+            "torque_range": {"x": (-50.0, 50.0), "y": (-50.0, 50.0), "z": (-0.0, 0.0)},
+            "probability": 0.002,  # Expect step = 1 / probability
+        },
     )
 
 
@@ -523,7 +510,7 @@ class WFEnvCfg(ManagerBasedRLEnvCfg):
     # Scene settings
     scene: WFSceneCfg = WFSceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
-    observations: ObservarionsCfg = ObservarionsCfg()
+    observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
     # MDP settings
