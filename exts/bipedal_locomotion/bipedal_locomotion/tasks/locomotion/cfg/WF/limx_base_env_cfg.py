@@ -133,11 +133,24 @@ class ObservationsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
-                            noise=GaussianNoise(mean=0.0, std=0.01))
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            noise=GaussianNoise(mean=0.0, std=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
+            )},
+        )  # 6
 
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            noise=GaussianNoise(mean=0.0, std=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
+            )},
+            scale=0.1,
+        )
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
 
@@ -154,11 +167,24 @@ class ObservationsCfg:
         proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
-                            noise=GaussianNoise(mean=0.0, std=0.01))
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=0.05,)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            noise=GaussianNoise(mean=0.0, std=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
+            )},
+        )  # 6
 
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            noise=GaussianNoise(mean=0.0, std=0.01),
+            params={"asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
+            )},
+            scale=0.1,
+        )
         # last action
         last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
 
