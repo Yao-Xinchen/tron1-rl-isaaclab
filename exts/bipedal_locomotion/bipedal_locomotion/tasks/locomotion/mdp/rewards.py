@@ -586,8 +586,8 @@ def safety_reward_exp(
         foot_pos_error_b / 2.0  # 2
         + base_orient_error_pitch  # 0.5
         + base_orient_error_roll  # 0.5
-        + base_height_error  # 1
-    ) / 4.0
+        + base_height_error * 2 # 1
+    ) / 5.0
 
     mani_safety_scale = torch.exp(-normalized_mani_error / std**2)
 

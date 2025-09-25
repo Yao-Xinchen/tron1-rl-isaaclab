@@ -206,6 +206,7 @@ class ObservationsCfg:
         robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
         robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.3)
         base_height_error = ObsTerm(func=mdp.base_height_error, scale=3.0)
+        foot_rel_position_w = ObsTerm(func=mdp.foot_rel_position_w, scale = 1.5)
         robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
         feet_contact_force = ObsTerm(
             func=mdp.robot_contact_force, params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="wheel_.*")}, scale=0.001
@@ -438,8 +439,8 @@ class RewardsCfg:
     # dof_acc_l2 = RewTerm(
     #     func=mdp.joint_acc_l2, weight=-2.0e-7, params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*")}
     # )
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
-    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.0004)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.002)
+    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.001)
     # -- optional penalties
     dof_vel_wheel_l2 = RewTerm(
         func=mdp.joint_vel_l2, weight=-0.0005, params={"asset_cfg": SceneEntityCfg("robot", joint_names="wheel_.+")}
@@ -455,7 +456,7 @@ class RewardsCfg:
         weight=-5.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*")},
     )
-    # joint_deviation_l1 = RewTerm(func=mdp.joint_deviation_l1, weight=0.0)
+    joint_deviation_l1 = RewTerm(func=mdp.joint_deviation_l1, weight=-0.04)
     # flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=0.0)
     # base_height_l2 = RewTerm(func=mdp.base_height_l2, weight=0.0, params={"target_height": 0.3})
 
@@ -484,7 +485,7 @@ class TerminationsCfg:
     bad_height = DoneTerm(
         func=mdp.bad_height_stochastic,
         params={
-            "limit_height": 0.5,
+            "limit_height": 0.7,
             "probability": 0.1,
         },  # Expect step = 1 / probability
     )
