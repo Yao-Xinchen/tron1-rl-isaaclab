@@ -36,21 +36,13 @@ import statistics
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from ..algorithm import PPO
-from ..modules import ActorCritic
-from ..env import VecEnv
+from rsl_rl.algorithm import PPO
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
+from rsl_rl.env import VecEnv
 
 
 class OnPolicyRunner:
-
-    def __init__(
-            self,
-            env: VecEnv,
-            train_cfg,
-            log_dir=None,
-            device='cpu'
-    ):
-
+    def __init__(self, env: VecEnv, train_cfg, log_dir=None, device="cpu"):
         self.cfg = train_cfg
         self.alg_cfg = train_cfg["algorithm"]
         self.policy_cfg = train_cfg["policy"]
@@ -58,25 +50,22 @@ class OnPolicyRunner:
         self.env = env
 
         obs, extras = self.env.get_observations()
-        obs_history = extras["observations"].get("obsHistory")
-        obs_history = obs_history.flatten(start_dim=1)
-        critic_obs = extras["observations"].get("critic")
-
         self.num_obs = obs.shape[1]
-        self.num_critic_obs = critic_obs.shape[1]
-        self.num_obs_history = obs_history.shape[1]
-
-        actor_critic: ActorCritic = ActorCritic(
+        self.num_cmds = extras["observations"]["commands"].shape[1]
+        self.num_obs_history = extras["observations"]["obsHistory"].flatten(start_dim=1).shape[1]
+        self.num_critic_obs = extras["observations"]["critic"].shape[1]
+        actor_critic_class = ActorCritic
+        actor_critic: ActorCritic = actor_critic_class(
             self.num_obs,
             self.num_critic_obs,
             self.env.num_actions,
             self.num_obs_history,
-            **self.policy_cfg
+            self.num_cmds,
+            **self.policy_cfg,
         ).to(self.device)
-
-        self.alg: PPO = PPO(
-            actor_critic, device=self.device, **self.alg_cfg
-        )
+        alg_class = PPO
+        self.alg: PPO = alg_class(
+            actor_critic, device=self.device, **self.alg_cfg)
 
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
@@ -88,7 +77,9 @@ class OnPolicyRunner:
             [self.num_obs],
             [self.num_obs_history],
             [self.num_critic_obs],
-            [self.env.num_actions])
+            [self.env.num_actions],
+            [self.num_cmds]
+        )
 
         # Log
         self.log_dir = log_dir
@@ -111,7 +102,8 @@ class OnPolicyRunner:
         obs_history = extras["observations"].get("obsHistory")
         obs_history = obs_history.flatten(start_dim=1)
         critic_obs = extras["observations"].get("critic")
-        obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
+        commands = extras["observations"].get("commands")
+        obs, obs_history, critic_obs, commands = obs.to(self.device), obs_history.to(self.device), critic_obs.to(self.device), commands.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         ep_infos = []
@@ -128,28 +120,37 @@ class OnPolicyRunner:
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
-                    actions = self.alg.act(obs, obs_history, critic_obs)
+                    actions = self.alg.act(obs, obs_history, critic_obs, commands)
                     (obs, rewards, dones, infos) = self.env.step(actions)
                     critic_obs = infos["observations"]["critic"]
                     obs_history = infos["observations"]["obsHistory"].flatten(start_dim=1)
+                    commands = infos["observations"]["commands"]
 
-                    obs, critic_obs, rewards, dones, obs_history = obs.to(self.device), critic_obs.to(self.device), \
-                        rewards.to(self.device), dones.to(self.device), obs_history.to(self.device)
+                    obs, obs_history, critic_obs, commands, rewards, dones = (
+                        obs.to(self.device),
+                        obs_history.to(self.device),
+                        critic_obs.to(self.device), # critic_obs.to(self.device),
+                        commands.to(self.device),
+                        rewards.to(self.device),
+                        dones.to(self.device),
+                    )
                     self.alg.process_env_step(rewards, dones, infos)
 
                     if self.log_dir is not None:
                         # Book keeping
                         if 'episode' in infos:
                             ep_infos.append(infos['episode'])
-                        elif 'log' in infos:
+                        if 'log' in infos:
                             ep_infos.append(infos['log'])
                         cur_reward_sum += rewards
                         cur_episode_length += 1
                         new_ids = (dones > 0).nonzero(as_tuple=False)
                         rewbuffer.extend(
-                            cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist())
+                            cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist()
+                        )
                         lenbuffer.extend(
-                            cur_episode_length[new_ids][:, 0].cpu().numpy().tolist())
+                            cur_episode_length[new_ids][:, 0].cpu().numpy().tolist()
+                        )
                         cur_reward_sum[new_ids] = 0
                         cur_episode_length[new_ids] = 0
 
@@ -158,7 +159,7 @@ class OnPolicyRunner:
 
                 # Learning step
                 start = stop
-                self.alg.compute_returns(critic_obs)
+                self.alg.compute_returns(critic_obs, commands)
 
             mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss = self.alg.update()
             stop = time.time()
@@ -188,26 +189,27 @@ class OnPolicyRunner:
                         ep_info[key] = torch.Tensor([ep_info[key]])
                     if len(ep_info[key].shape) == 0:
                         ep_info[key] = ep_info[key].unsqueeze(0)
-                    infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
+                    infotensor = torch.cat(
+                        (infotensor, ep_info[key].to(self.device)))
                 value = torch.mean(infotensor)
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
         mean_std = self.alg.actor_critic.std.mean()
-        fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
+        fps = int(self.num_steps_per_env * self.env.num_envs /(locs['collection_time'] + locs['learn_time']))
 
         self.writer.add_scalar('Loss/value_function', locs['mean_value_loss'], locs['it'])
         self.writer.add_scalar('Loss/extra', locs['mean_proprio_extra_loss'], locs['it'])
         self.writer.add_scalar('Loss/surrogate', locs['mean_surrogate_loss'], locs['it'])
-        self.writer.add_scalar('Loss/learning_rate', self.alg.learning_rate, locs['it'])
-        self.writer.add_scalar('Policy/mean_noise_std', mean_std.item(), locs['it'])
+        self.writer.add_scalar('Loss/learning_rate',self.alg.learning_rate, locs['it'])
+        self.writer.add_scalar('Policy/mean_noise_std',mean_std.item(), locs['it'])
         self.writer.add_scalar('Perf/total_fps', fps, locs['it'])
         self.writer.add_scalar('Perf/collection time', locs['collection_time'], locs['it'])
         self.writer.add_scalar('Perf/learning_time', locs['learn_time'], locs['it'])
         if len(locs['rewbuffer']) > 0:
-            self.writer.add_scalar('Train/mean_reward', statistics.mean(locs['rewbuffer']), locs['it'])
-            self.writer.add_scalar('Train/mean_episode_length', statistics.mean(locs['lenbuffer']), locs['it'])
-            self.writer.add_scalar('Train/mean_reward/time', statistics.mean(locs['rewbuffer']), self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
+            self.writer.add_scalar('Train/mean_reward',statistics.mean(locs['rewbuffer']), locs['it'])
+            self.writer.add_scalar('Train/mean_episode_length',statistics.mean(locs['lenbuffer']), locs['it'])
+            self.writer.add_scalar('Train/mean_reward/time',statistics.mean(locs['rewbuffer']), self.tot_time)
+            self.writer.add_scalar('Train/mean_episode_length/time',statistics.mean(locs['lenbuffer']), self.tot_time)
 
         str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 
@@ -216,7 +218,7 @@ class OnPolicyRunner:
                 f"""{'#' * width}\n"""
                 f"""{str.center(width, ' ')}\n\n"""
                 f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
-                    'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
+                            'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
@@ -230,7 +232,7 @@ class OnPolicyRunner:
                 f"""{'#' * width}\n"""
                 f"""{str.center(width, ' ')}\n\n"""
                 f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
-                    'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
+                            'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n""")
@@ -264,14 +266,14 @@ class OnPolicyRunner:
         self.current_learning_iteration = loaded_dict['iter']
         return loaded_dict['infos']
 
-    def get_inference_policy(self, device=None):
+    def get_inference_policy_student(self, device=None):
         self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
         if device is not None:
             self.alg.actor_critic.to(device)
-        return self.alg.actor_critic.act_inference
+        return self.alg.actor_critic.act_inference_student
 
-    def get_inference_encoder(self, device=None):
-        self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+    def get_inference_policy_teacher(self, device=None):
+        self.alg.actor_critic.eval()
         if device is not None:
             self.alg.actor_critic.to(device)
-        return self.alg.actor_critic.proprioceptive_encoder
+        return self.alg.actor_critic.act_inference_teacher
