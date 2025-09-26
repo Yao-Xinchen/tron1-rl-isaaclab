@@ -38,6 +38,7 @@ simulation_app = app_launcher.app
 
 
 import gymnasium as gym
+import onnxruntime as ort
 import os
 import torch
 
@@ -98,43 +99,47 @@ def main():
     ppo_runner.load(resume_path)
 
     # obtain the trained policy for inference
-    policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
-    encoder = ppo_runner.get_inference_encoder(device=env.unwrapped.device)
+    teacher_policy = ppo_runner.get_inference_policy_teacher(device=env.unwrapped.device)
 
     # export policy to onnx
     if EXPORT_POLICY:
         export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-        export_policy_as_jit(
-            ppo_runner.alg.actor_critic, export_model_dir
-        )
-        print("Exported policy as jit script to: ", export_model_dir)
         export_mlp_as_onnx(
-            ppo_runner.alg.actor_critic.actor, 
-            export_model_dir, 
+            ppo_runner.alg.actor_critic.actor,
+            export_model_dir,
             "policy",
-            ppo_runner.alg.actor_critic.num_actor_obs,
+            ppo_runner.alg.actor_critic.actor_input_dim,
         )
         export_mlp_as_onnx(
             ppo_runner.alg.actor_critic.proprioceptive_encoder,
             export_model_dir,
             "encoder",
-            ppo_runner.alg.actor_critic.proprioceptive_encoder.input_dim,
+            ppo_runner.alg.actor_critic.encoder_input_dim,
         )
+
+    # Fall back to PyTorch student policy
+    student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
+
     # reset environment
     obs, obs_dict = env.get_observations()
     obs_history = obs_dict["observations"].get("obsHistory")
     obs_history = obs_history.flatten(start_dim=1)
+    critic_obs = obs_dict["observations"].get("critic")
+    commands = obs_dict["observations"].get("commands")
 
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
             # agent stepping
-            actions = policy(obs, obs_history)
+            actions = student_policy(obs, obs_history, commands)
+            # actions = teacher_policy(obs, critic_obs, commands)
             # env stepping
             obs, _, _, infos = env.step(actions)
             obs_history = infos["observations"].get("obsHistory")
             obs_history = obs_history.flatten(start_dim=1)
+            critic_obs = infos["observations"].get("critic")
+            commands = infos["observations"].get("commands")
 
     # close the simulator
     env.close()
