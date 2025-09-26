@@ -53,9 +53,10 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
     model = copy.deepcopy(mlp).to("cpu")
     model.eval()
 
-    dummy_input = torch.randn(input_dim)
+    dummy_input = torch.randn(1, input_dim)
     input_names = ["mlp_input"]
     output_names = ["mlp_output"]
+    dynamic_axes = {"mlp_input": {0: "batch_size"}, "mlp_output": {0: "batch_size"}}
 
     torch.onnx.export(
         model,
@@ -64,6 +65,7 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
         verbose=True,
         input_names=input_names,
         output_names=output_names,
+        dynamic_axes=dynamic_axes,
         export_params=True,
         opset_version=13,
     )
