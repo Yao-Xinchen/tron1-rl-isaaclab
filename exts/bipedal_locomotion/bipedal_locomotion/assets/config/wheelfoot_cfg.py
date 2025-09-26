@@ -112,7 +112,6 @@ WHEELFOOT_ARM_CFG = ArticulationCfg(
             stiffness=0.0,
             damping=0.5,
             friction=0.33
-
         ),
         "arm_former_three": ImplicitActuatorCfg(
             joint_names_expr=["J1", "J2", "J3"],
