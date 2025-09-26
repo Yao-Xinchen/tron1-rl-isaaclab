@@ -269,22 +269,22 @@ class EventsCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
             "static_friction_range": (0.4, 1.2),
-            "dynamic_friction_range": (0.7, 0.9),
+            "dynamic_friction_range": (0.2, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
     )
-    robot_joint_stiffness_and_damping = EventTerm(
-        func=mdp.randomize_actuator_gains,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stiffness_distribution_params": (32, 48),
-            "damping_distribution_params": (2.0, 3.0),
-            "operation": "abs",
-            "distribution": "uniform",
-        },
-    )
+    # robot_joint_stiffness_and_damping = EventTerm(
+    #     func=mdp.randomize_actuator_gains,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+    #         "stiffness_distribution_params": (32, 48),
+    #         "damping_distribution_params": (2.0, 3.0),
+    #         "operation": "abs",
+    #         "distribution": "uniform",
+    #     },
+    # )
     robot_center_of_mass = EventTerm(
         func=mdp.randomize_rigid_body_coms,
         mode="startup",
@@ -323,17 +323,17 @@ class EventsCfg:
         },
     )
 
-    # randomize_actuator_gains = EventTerm(
-    #     func=mdp.randomize_actuator_gains,
-    #     mode="reset",
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-    #         "stiffness_distribution_params": (0.5, 2.0),
-    #         "damping_distribution_params": (0.5, 2.0),
-    #         "operation": "scale",
-    #         "distribution": "log_uniform",
-    #     },
-    # )
+    randomize_actuator_gains = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (0.5, 2.0),
+            "damping_distribution_params": (0.5, 2.0),
+            "operation": "scale",
+            "distribution": "log_uniform",
+        },
+    )
 
     push_robot = EventTerm(
         func=mdp.apply_external_force_torque_stochastic,
