@@ -565,7 +565,7 @@ def safety_reward_exp(
     # compute base error
     base_orient_error_roll = torch.abs(asset.data.projected_gravity_b[:, 1]) / 0.1
     base_orient_error_pitch = torch.abs(asset.data.projected_gravity_b[:, 0]) / 0.85
-    base_height_error = torch.abs((base_height - base_height_target)) / 0.2  # not used
+    base_height_error = ((base_height - base_height_target) / 0.1) ** 2
 
     # body velocity penalty
     wheel_vel_error = (torch.sum(torch.abs(asset.data.joint_vel[:, env._wheels_joint_ids]), dim=1) / 3.0).clip(max=4)
@@ -595,7 +595,7 @@ def safety_reward_exp(
 
     env._mani_safety_scale = mani_safety_scale + 0.4
     env._loco_safety_scale = loco_safety_scale + 0.4
-    
+
     return mani_safety_scale * .5 + loco_safety_scale * .5
 
 def track_base_linear_velocity_exp(
@@ -606,16 +606,16 @@ def track_base_linear_velocity_exp(
     """Reward tracking of base linear velocity using exponential kernel."""
     # Get current base linear velocity
     current_vel = env.scene["robot"].data.root_link_lin_vel_b[:, :2]  # [vx, vy]
-    
+
     # Get linear velocity command 
     vel_command = env.command_manager.get_command(command_name)
-    
+
     # Compute linear velocity error
     linear_error = torch.norm(current_vel - vel_command[:, :2], dim=1)
-    
+
     normal = torch.exp(-linear_error / std**2)
     micro_enhancement = torch.exp(-5 * linear_error / std**2)
-    
+
     return (normal + micro_enhancement) * env._loco_safety_scale
 
 def track_base_angular_velocity_exp(
@@ -624,19 +624,19 @@ def track_base_angular_velocity_exp(
     command_name: str = "base_twist",
 ) -> torch.Tensor:
     """Reward tracking of base angular velocity using exponential kernel."""
-    
+
     # Get current base angular velocity
     current_ang_vel = env.scene["robot"].data.root_link_ang_vel_b[:, 2]  # [wz]
-    
+
     # Get angular velocity command
     vel_command = env.command_manager.get_command(command_name)
-    
+
     # Compute angular velocity error
     angular_error = torch.abs(current_ang_vel - vel_command[:, 2])
-    
+
     normal = torch.exp(-angular_error / std**2)
     micro_enhancement = torch.exp(-5 * angular_error / std**2)
-    
+
     return (normal + micro_enhancement) * env._loco_safety_scale
 
 def track_base_velocity_exp(
@@ -648,17 +648,17 @@ def track_base_velocity_exp(
     # Get current base velocity
     current_vel = env.scene["robot"].data.root_link_lin_vel_b[:, :2]  # [vx, vy]
     current_ang_vel = env.scene["robot"].data.root_link_ang_vel_b[:, 2]  # [wz]
-    
+
     # Get velocity command 
     vel_command = env.command_manager.get_command(command_name)
-    
+
     # Compute velocity errors
     linear_error = torch.norm(current_vel - vel_command[:, :2], dim=1)
     angular_error = torch.abs(current_ang_vel - vel_command[:, 2])
-    
+
     # Combined velocity error
     total_error = linear_error + angular_error * 0.5  # Weight angular error less
-    
+
     return torch.exp(-total_error / std**2)
 
 def weighted_joint_torques_l2(

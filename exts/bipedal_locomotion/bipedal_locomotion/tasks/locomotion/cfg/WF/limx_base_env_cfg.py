@@ -202,9 +202,9 @@ class ObservationsCfg:
         robot_mass = ObsTerm(func=mdp.robot_mass, scale=0.1)
         robot_inertia = ObsTerm(func=mdp.robot_inertia, scale=5.0)
         robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos, scale=1.0)
-        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.01)
-        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
-        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.3)
+        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.025)
+        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=1.0)
+        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.5)
         base_height_error = ObsTerm(func=mdp.base_height_error, scale=3.0)
         foot_rel_position_w = ObsTerm(func=mdp.foot_rel_position_w, scale = 1.5)
         robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
@@ -268,8 +268,8 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.4, 1.2),
-            "dynamic_friction_range": (0.2, 0.9),
+            "static_friction_range": (0.6, 1.2),
+            "dynamic_friction_range": (0.4, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
@@ -485,7 +485,7 @@ class TerminationsCfg:
     bad_height = DoneTerm(
         func=mdp.bad_height_stochastic,
         params={
-            "limit_height": 0.7,
+            "limit_height": 0.5,
             "probability": 0.1,
         },  # Expect step = 1 / probability
     )
