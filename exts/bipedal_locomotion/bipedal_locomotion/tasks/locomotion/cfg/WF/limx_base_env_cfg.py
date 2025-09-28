@@ -18,7 +18,6 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveGaussianNoiseCfg as GaussianNoise
-from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from bipedal_locomotion.tasks.locomotion import mdp
 from bipedal_locomotion.tasks.locomotion.cfg.WF.terrains_cfg import ROUGH_TERRAINS_CFG
@@ -96,12 +95,12 @@ class CommandsCfg:
         resampling_time_range=(4.0, 8.0),
         rel_standing_envs=0.1,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.2, 0.2),  # min max [m/s]
-            lin_vel_y=(-0.0, 0.0),  # min max [m/s]
-            ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
-            # lin_vel_x=(-2.0, 2.0),  # min max [m/s]
-            # lin_vel_y=(-1.0, 1.0),  # min max [m/s]
-            # ang_vel_z=(-0.5, 0.5),  # min max [rad/s]
+            # lin_vel_x=(-0.2, 0.2),  # min max [m/s]
+            # lin_vel_y=(-0.0, 0.0),  # min max [m/s]
+            # ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
+            lin_vel_x=(-1.0, 1.0),  # min max [m/s]
+            lin_vel_y=(-1.0, 1.0),  # min max [m/s]
+            ang_vel_z=(-1.0, 1.0),  # min max [rad/s]
         ),
         debug_vis=True,
     )
@@ -129,13 +128,13 @@ class ObservationsCfg:
         """Observation for policy group"""
 
         # robot base measurements
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=GaussianNoise(mean=0.0, std=0.05),clip=(-100.0, 100.0),scale=0.25,)
-        proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=GaussianNoise(mean=0.0, std=0.25),clip=(-100.0, 100.0),scale=0.25,)
+        proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.05),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            noise=GaussianNoise(mean=0.0, std=0.01),
+            noise=GaussianNoise(mean=0.0, std=0.05),
             params={"asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
@@ -144,15 +143,15 @@ class ObservationsCfg:
 
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            noise=GaussianNoise(mean=0.0, std=0.01),
+            noise=GaussianNoise(mean=0.0, std=0.25),
             params={"asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
             )},
-            scale=0.1,
+            scale=0.05,
         )
         # last action
-        last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
+        last_action = ObsTerm(func=mdp.last_action,clip=(-100.0, 100.0),scale=1.0,)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -163,13 +162,13 @@ class ObservationsCfg:
         """Observation for policy group"""
 
         # robot base measurements
-        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=GaussianNoise(mean=0.0, std=0.05),clip=(-100.0, 100.0),scale=0.25,)
-        proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.025),clip=(-100.0, 100.0),scale=1.0,)
+        base_ang_vel = ObsTerm(func=mdp.base_ang_vel, noise=GaussianNoise(mean=0.0, std=0.25),clip=(-100.0, 100.0),scale=0.25,)
+        proj_gravity = ObsTerm(func=mdp.projected_gravity, noise=GaussianNoise(mean=0.0, std=0.05),clip=(-100.0, 100.0),scale=1.0,)
 
         # robot joint measurements exclude wheel pos
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            noise=GaussianNoise(mean=0.0, std=0.01),
+            noise=GaussianNoise(mean=0.0, std=0.05),
             params={"asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint"]
@@ -178,15 +177,15 @@ class ObservationsCfg:
 
         joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            noise=GaussianNoise(mean=0.0, std=0.01),
+            noise=GaussianNoise(mean=0.0, std=0.25),
             params={"asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=["abad_[RL]_Joint","hip_[RL]_Joint","knee_[RL]_Joint","wheel_[RL]_Joint"]
             )},
-            scale=0.1,
+            scale=0.05,
         )
         # last action
-        last_action = ObsTerm(func=mdp.last_action, noise=GaussianNoise(mean=0.0, std=0.01),clip=(-100.0, 100.0),scale=1.0,)
+        last_action = ObsTerm(func=mdp.last_action,clip=(-100.0, 100.0),scale=1.0,)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -204,8 +203,7 @@ class ObservationsCfg:
 
         # robot joint measurements
         joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
-                            noise=GaussianNoise(mean=0.0, std=0.01))
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},)
         joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.05)
 
         # last action
@@ -223,9 +221,9 @@ class ObservationsCfg:
         robot_mass = ObsTerm(func=mdp.robot_mass, scale=0.1)
         robot_inertia = ObsTerm(func=mdp.robot_inertia, scale=5.0)
         robot_joint_pos = ObsTerm(func=mdp.robot_joint_pos, scale=1.0)
-        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.01)
-        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=0.1)
-        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.3)
+        robot_joint_stiffness = ObsTerm(func=mdp.robot_joint_stiffness, scale=0.03)
+        robot_joint_damping = ObsTerm(func=mdp.robot_joint_damping, scale=1.0)
+        robot_vel = ObsTerm(func=mdp.robot_vel, scale=0.5)
         base_height_error = ObsTerm(func=mdp.base_height_error, scale=3.0)
         foot_rel_position_w = ObsTerm(func=mdp.foot_rel_position_w, scale = 1.5)
         robot_material_properties = ObsTerm(func=mdp.robot_material_properties, scale=1.0)
@@ -289,8 +287,8 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.4, 1.2),
-            "dynamic_friction_range": (0.7, 0.9),
+            "static_friction_range": (0.6, 1.2),
+            "dynamic_friction_range": (0.4, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
@@ -404,21 +402,17 @@ class RewardsCfg:
     )
 
     # -- penalties
-    # lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
-    # ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
     dof_weighted_torques_l2 = RewTerm(
         func=mdp.weighted_joint_torques_l2,
-        weight=-4.0e-5,
+        weight=-1.0e-4,
         params={
             "torque_weight": {
                 "abad_L_Joint": 0.2,
                 "hip_L_Joint": 0.2,
                 "knee_L_Joint": 0.2,
-                # "foot_L_Joint": 0.2,
                 "abad_R_Joint": 0.2,
                 "hip_R_Joint": 0.2,
                 "knee_R_Joint": 0.2,
-                # "foot_R_Joint": 0.2,
                 "wheel_L_Joint": 3.0,
                 "wheel_R_Joint": 3.0,
             }
@@ -427,28 +421,26 @@ class RewardsCfg:
 
     dof_weighted_power_l1 = RewTerm(
         func=mdp.weighted_joint_power_l1,
-        weight=-2.5e-4,
+        weight=-5.0e-4,
         params={
             "power_weight": {
                 "abad_L_Joint": 1.0,
                 "hip_L_Joint": 1.0,
                 "knee_L_Joint": 1.0,
-                # "foot_L_Joint": 1.0,
                 "abad_R_Joint": 1.0,
                 "hip_R_Joint": 1.0,
                 "knee_R_Joint": 1.0,
-                # "foot_R_Joint": 1.0,
                 "wheel_L_Joint": 1.0,
                 "wheel_R_Joint": 1.0,
             }
         },
     )
 
-    # dof_acc_l2 = RewTerm(
-    #     func=mdp.joint_acc_l2, weight=-2.0e-7, params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*")}
-    # )
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
-    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.0004)
+    dof_acc_l2 = RewTerm(
+        func=mdp.joint_acc_l2, weight=-2.0e-7, params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*")}
+    )
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
+    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.01)
     # -- optional penalties
     dof_vel_wheel_l2 = RewTerm(
         func=mdp.joint_vel_l2, weight=-0.0005, params={"asset_cfg": SceneEntityCfg("robot", joint_names="wheel_.+")}
@@ -458,18 +450,11 @@ class RewardsCfg:
         weight=-0.001,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*")},
     )
-    # dof_power_l1 = RewTerm(func=mdp.dof_power_l1, weight=0.0)
     dof_non_wheel_pos_limits = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-5.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names="(?!wheel_).*")},
     )
-    # joint_deviation_l1 = RewTerm(func=mdp.joint_deviation_l1, weight=0.0)
-    # flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=0.0)
-    # base_height_l2 = RewTerm(func=mdp.base_height_l2, weight=0.0, params={"target_height": 0.3})
-
-    # termination_penalty = RewTerm(func=mdp.is_terminated, weight=-1000)
-    # alive = RewTerm(func=mdp.stay_alive, weight=2.0)
 
 
 @configclass
@@ -539,7 +524,7 @@ class WFEnvCfg(ManagerBasedRLEnvCfg):
         """Post initialization"""
         self.decimation = 4
         self.episode_length_s = 20.0
-        self.sim.render_interval = 2 * self.decimation
+        self.sim.render_interval = 2
         # simulation settings
         self.sim.dt = 0.005
         self.seed = 42
