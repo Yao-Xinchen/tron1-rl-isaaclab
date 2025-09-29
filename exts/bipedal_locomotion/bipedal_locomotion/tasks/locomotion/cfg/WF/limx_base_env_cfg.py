@@ -95,12 +95,12 @@ class CommandsCfg:
         resampling_time_range=(4.0, 8.0),
         rel_standing_envs=0.1,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            # lin_vel_x=(-0.2, 0.2),  # min max [m/s]
-            # lin_vel_y=(-0.0, 0.0),  # min max [m/s]
-            # ang_vel_z=(-0.3, 0.3),  # min max [rad/s]
-            lin_vel_x=(-1.0, 1.0),  # min max [m/s]
-            lin_vel_y=(-1.0, 1.0),  # min max [m/s]
-            ang_vel_z=(-1.0, 1.0),  # min max [rad/s]
+            lin_vel_x=(-0.0, 0.0),  # min max [m/s]
+            lin_vel_y=(-0.0, 0.0),  # min max [m/s]
+            ang_vel_z=(-0.0, 0.0),  # min max [rad/s]
+            # lin_vel_x=(-1.0, 1.0),  # min max [m/s]
+            # lin_vel_y=(-1.0, 1.0),  # min max [m/s]
+            # ang_vel_z=(-1.0, 1.0),  # min max [rad/s]
         ),
         debug_vis=True,
     )
