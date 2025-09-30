@@ -176,6 +176,7 @@ class ObservationsCfg:
     @configclass
     class CriticCfg(ObsGroup):
         """Observation for critic group"""
+
         # robot base measurements
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel,clip=(-100.0, 100.0),scale=1.0,)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel,clip=(-100.0, 100.0),scale=0.25,)
@@ -183,15 +184,14 @@ class ObservationsCfg:
 
         # robot joint measurements
         joint_pos = ObsTerm(func=mdp.joint_pos_rel_exclude_wheel,
-                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]},
-                            noise=GaussianNoise(mean=0.0, std=0.01))
+                            params={"wheel_joints_name": ["wheel_[RL]_Joint"]})
         joint_vel = ObsTerm(func=mdp.joint_vel, clip=(-100.0, 100.0), scale=0.05)
 
         # last action
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
 
         # heights scan
-        # heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
+        heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
 
         # Privileged observation
         robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque, scale=0.01)
