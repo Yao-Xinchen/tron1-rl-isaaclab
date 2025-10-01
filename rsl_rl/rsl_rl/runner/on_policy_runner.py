@@ -158,10 +158,10 @@ class OnPolicyRunner:
                                 f.write(f"{'='*80}\n\n")
 
                         # Replace NaN observations with healthy environment's observations
-                        obs[nan_mask] = obs[healthy_idx]
-                        obs_history[nan_mask] = obs_history[healthy_idx]
-                        critic_obs[nan_mask] = critic_obs[healthy_idx]
-                        commands[nan_mask] = commands[healthy_idx]
+                        obs[nan_mask] = obs[healthy_idx].clone()
+                        obs_history[nan_mask] = obs_history[healthy_idx].clone()
+                        critic_obs[nan_mask] = critic_obs[healthy_idx].clone()
+                        commands[nan_mask] = commands[healthy_idx].clone()
 
                     actions = self.alg.act(obs, obs_history, critic_obs, commands)
 
