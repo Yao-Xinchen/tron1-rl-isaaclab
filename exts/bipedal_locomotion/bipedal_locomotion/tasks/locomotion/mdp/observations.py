@@ -211,3 +211,36 @@ def foot_rel_position_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = Scen
     base_position_w = asset.data.root_pos_w
 
     return (foot_position_w - base_position_w.unsqueeze(1)).view(env.num_envs, -1)
+
+
+def height_scan_safe(
+    env: ManagerBasedEnv,
+    sensor_cfg: SceneEntityCfg,
+    offset: float = 0.5,
+    clamp_min: float = -5.0,
+    clamp_max: float = 5.0
+) -> torch.Tensor:
+    """Safe height scan that handles NaN/inf values from raycasting failures.
+
+    Args:
+        env: The environment instance.
+        sensor_cfg: The sensor configuration.
+        offset: Height offset to subtract from measurements (default: 0.5).
+        default_height: Value to use when NaN/inf detected (default: 0.0).
+        clamp_min: Minimum allowed height value (default: -10.0).
+        clamp_max: Maximum allowed height value (default: 10.0).
+
+    Returns:
+        torch.Tensor: Height scan values with NaN/inf replaced by default_height.
+    """
+    # Extract the sensor
+    sensor: RayCaster = env.scene.sensors[sensor_cfg.name]
+
+    # Compute height scan: height = sensor_height - hit_point_z - offset
+    height_scan = sensor.data.pos_w[:, 2].unsqueeze(1) - sensor.data.ray_hits_w[..., 2] - offset
+
+    # Replace NaN/inf with default height and clamp to range
+    height_scan = torch.nan_to_num(height_scan, nan=clamp_max, posinf=clamp_max, neginf=clamp_min)
+    height_scan = torch.clamp(height_scan, clamp_min, clamp_max)
+
+    return height_scan
