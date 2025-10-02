@@ -34,6 +34,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from rsl_rl.modules import ActorCritic
+from rsl_rl.modules.rnd import RandomNetworkDistillation
 from rsl_rl.storage import RolloutStorage
 
 
@@ -58,6 +59,7 @@ class PPO:
         device='cpu',
         num_proprio_encoder_substeps = 1,
         student_reinforcing = False,
+        rnd_weight=1.0,
         **kwargs,
     ):
         if kwargs:
@@ -74,11 +76,16 @@ class PPO:
 
         self.num_proprio_encoder_substeps = num_proprio_encoder_substeps
         self.student_reinforcing = student_reinforcing
+        self.rnd_weight = rnd_weight
 
         # PPO components
         self.actor_critic = actor_critic
         self.actor_critic.to(self.device)
         self.storage = None  # initialized later
+
+        # RND components (initialized in init_storage)
+        self.rnd = None
+        self.rnd_optimizer = None
         if not self.student_reinforcing:
             self.optimizer = optim.Adam(
                 [
@@ -136,6 +143,22 @@ class PPO:
             commands_shape,
             self.device)
 
+        # Initialize RND if enabled
+        if self.rnd_weight > 0:
+            self.rnd = RandomNetworkDistillation(
+                num_states=critic_obs_shape[0],
+                num_outputs=32,
+                predictor_hidden_dims=[256, 256],
+                target_hidden_dims=[256, 256],
+                activation="elu",
+                weight=self.rnd_weight,
+                state_normalization=False,
+                reward_normalization=False,
+                device=self.device,
+                weight_schedule=None,
+            )
+            self.rnd_optimizer = optim.Adam(self.rnd.predictor.parameters(), lr=1e-3)
+
     def test_mode(self):
         self.actor_critic.test()
 
@@ -163,6 +186,14 @@ class PPO:
     def process_env_step(self, rewards, dones, infos):
         self.transition.rewards = rewards.clone()
         self.transition.dones = dones
+
+        # Compute the intrinsic rewards and add to extrinsic rewards
+        if self.rnd:
+            # Compute the intrinsic rewards
+            intrinsic_rewards = self.rnd.get_intrinsic_reward(self.transition.critic_observations)
+            # Add intrinsic rewards to extrinsic rewards
+            self.transition.rewards += intrinsic_rewards
+
         # Bootstrapping on time outs
         if 'time_outs' in infos:
             self.transition.rewards += self.gamma * \
@@ -182,6 +213,7 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_proprio_extra_loss = 0
+        mean_rnd_loss = 0
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(
                 self.num_mini_batches, self.num_learning_epochs)
@@ -260,15 +292,37 @@ class PPO:
             loss = surrogate_loss + self.value_loss_coef * \
                 value_loss - self.entropy_coef * entropy_batch.mean()
 
+            # Random Network Distillation loss
+            if self.rnd:
+                # Normalize the state
+                with torch.no_grad():
+                    rnd_state_batch = self.rnd.state_normalizer(critic_obs_batch)
+                # Predict the embedding and the target
+                predicted_embedding = self.rnd.predictor(rnd_state_batch)
+                target_embedding = self.rnd.target(rnd_state_batch).detach()
+                # Compute the loss as the mean squared error
+                mseloss = torch.nn.MSELoss()
+                rnd_loss = mseloss(predicted_embedding, target_embedding)
+
             # Gradient step
             self.optimizer.zero_grad()
             loss.backward()
+            # RND gradient step
+            if self.rnd:
+                self.rnd_optimizer.zero_grad()
+                rnd_loss.backward()
+
             nn.utils.clip_grad_norm_(
                 self.actor_critic.parameters(), self.max_grad_norm)
             self.optimizer.step()
+            # RND optimizer step
+            if self.rnd:
+                self.rnd_optimizer.step()
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
+            if self.rnd:
+                mean_rnd_loss += rnd_loss.item()
 
             # extra gradient step for the proprioperceptive encoder training
             if not self.student_reinforcing:
@@ -288,9 +342,11 @@ class PPO:
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
+        if self.rnd:
+            mean_rnd_loss /= num_updates
         num_updates_extra = self.num_learning_epochs * self.num_mini_batches * self.num_proprio_encoder_substeps
         if num_updates_extra > 0:
-            mean_proprio_extra_loss /= num_updates_extra 
+            mean_proprio_extra_loss /= num_updates_extra
         self.storage.clear()
 
-        return mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss
+        return mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss, mean_rnd_loss

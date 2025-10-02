@@ -217,7 +217,7 @@ class OnPolicyRunner:
                 start = stop
                 self.alg.compute_returns(critic_obs, commands)
 
-            mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss = self.alg.update()
+            mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss, mean_rnd_loss = self.alg.update()
             stop = time.time()
             learn_time = stop - start
             if self.log_dir is not None:
@@ -256,6 +256,7 @@ class OnPolicyRunner:
         self.writer.add_scalar('Loss/value_function', locs['mean_value_loss'], locs['it'])
         self.writer.add_scalar('Loss/extra', locs['mean_proprio_extra_loss'], locs['it'])
         self.writer.add_scalar('Loss/surrogate', locs['mean_surrogate_loss'], locs['it'])
+        self.writer.add_scalar('Loss/rnd', locs['mean_rnd_loss'], locs['it'])
         self.writer.add_scalar('Loss/learning_rate',self.alg.learning_rate, locs['it'])
         self.writer.add_scalar('Policy/mean_noise_std',mean_std.item(), locs['it'])
         self.writer.add_scalar('Perf/total_fps', fps, locs['it'])
@@ -277,6 +278,8 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'Proprio extra loss:':>{pad}} {locs['mean_proprio_extra_loss']:.4f}\n"""
+                f"""{'RND loss:':>{pad}} {locs['mean_rnd_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
                 f"""{'Mean reward:':>{pad}} {statistics.mean(locs['rewbuffer']):.2f}\n"""
                 f"""{'Mean episode length:':>{pad}} {statistics.mean(locs['lenbuffer']):.2f}\n""")
@@ -291,6 +294,8 @@ class OnPolicyRunner:
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                 f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
                 f"""{'Surrogate loss:':>{pad}} {locs['mean_surrogate_loss']:.4f}\n"""
+                f"""{'Proprio extra loss:':>{pad}} {locs['mean_proprio_extra_loss']:.4f}\n"""
+                f"""{'RND loss:':>{pad}} {locs['mean_rnd_loss']:.4f}\n"""
                 f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n""")
             #   f"""{'Mean reward/step:':>{pad}} {locs['mean_reward']:.2f}\n"""
             # f"""{'Mean episode length/episode:':>{pad}}
