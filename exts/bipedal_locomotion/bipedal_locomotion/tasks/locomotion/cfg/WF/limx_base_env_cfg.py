@@ -93,7 +93,7 @@ class CommandsCfg:
     base_pose = mdp.UniformWorldPoseCommandCfg(
         asset_name="robot",
         body_name="base_Link",
-        resampling_time_range=(6.0, 15.0),
+        resampling_time_range=(5.0, 10.0),
         resampling_time_scale=(0.5, 5.0),
         make_quat_unique=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
@@ -191,7 +191,7 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
 
         # heights scan
-        heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
+        heights = ObsTerm(func=mdp.height_scan_safe, params={"sensor_cfg": SceneEntityCfg("height_scanner")}, scale=3.0)
 
         # Privileged observation
         robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque, scale=0.01)
