@@ -469,26 +469,26 @@ class TerminationsCfg:
     """Termination terms for the MDP"""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    base_contact = DoneTerm(
-        func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base_Link"), "threshold": 1.0},
-    )
+    # base_contact = DoneTerm(
+    #     func=mdp.illegal_contact,
+    #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base_Link"), "threshold": 1.0},
+    # )
 
-    bad_orientation = DoneTerm(
-        func=mdp.bad_orientation_stochastic,
-        params={
-            "limit_angle": math.pi * 0.4,
-            "probability": 0.1,
-        },  # Expect step = 1 / probability
-    )
+    # bad_orientation = DoneTerm(
+    #     func=mdp.bad_orientation_stochastic,
+    #     params={
+    #         "limit_angle": math.pi * 0.4,
+    #         "probability": 0.1,
+    #     },  # Expect step = 1 / probability
+    # )
 
-    bad_height = DoneTerm(
-        func=mdp.bad_height_stochastic,
-        params={
-            "limit_height": 0.5,
-            "probability": 0.1,
-        },  # Expect step = 1 / probability
-    )
+    # bad_height = DoneTerm(
+    #     func=mdp.bad_height_stochastic,
+    #     params={
+    #         "limit_height": 0.5,
+    #         "probability": 0.1,
+    #     },  # Expect step = 1 / probability
+    # )
 
 
 @configclass
