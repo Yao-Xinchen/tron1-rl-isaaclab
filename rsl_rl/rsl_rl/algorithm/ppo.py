@@ -59,7 +59,7 @@ class PPO:
         device='cpu',
         num_proprio_encoder_substeps = 1,
         student_reinforcing = False,
-        rnd_weight=1.0,
+        rnd_weight=0.5,
         **kwargs,
     ):
         if kwargs:
