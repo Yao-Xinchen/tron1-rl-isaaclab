@@ -210,7 +210,7 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action, clip=(-100.0, 100.0), scale=1.0,)
 
         # heights scan
-        # heights = ObsTerm(func=mdp.height_scan,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
+        heights = ObsTerm(func=mdp.height_scan_safe,params={"sensor_cfg": SceneEntityCfg("height_scanner")})
 
         # Privileged observation
         robot_joint_torque = ObsTerm(func=mdp.robot_joint_torque, scale=0.01)
@@ -287,8 +287,8 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.6, 1.2),
-            "dynamic_friction_range": (0.4, 0.9),
+            "static_friction_range": (0.4, 1.2),
+            "dynamic_friction_range": (0.2, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
@@ -493,7 +493,7 @@ class CurriculumCfg:
     velocity_commands_ranges_level = CurrTerm(
         func=mdp.velocity_commands_ranges_level,  # type: ignore
         params={
-            "max_range": {"lin_vel_x": (-2.0, 2.0), "lin_vel_y": (-1.5, 1.5), "ang_vel_z": (-2.0, 2.0)},
+            "max_range": {"lin_vel_x": (-2.0, 2.0), "lin_vel_y": (-1.5, 1.5), "ang_vel_z": (-3.0, 3.0)},
             "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
             "command_name": "base_twist",
         },
