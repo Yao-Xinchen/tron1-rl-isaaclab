@@ -39,4 +39,17 @@ class UniformWorldPoseCommandCfg(UniformPoseCommandCfg):
     se3_decrease_vel_range: tuple[float, float] = (0.5, 1.4)
     resampling_time_scale: tuple[float, float] = (6.0, 15.0)
 
+    @configclass
+    class Ranges(UniformPoseCommandCfg.Ranges):
+        """Extended ranges with velocity commands in target pose frame."""
+
+        vel_x: tuple[float, float] = (-1.0, 1.0)
+        """Range for linear velocity in target's x direction (in m/s)."""
+
+        vel_y: tuple[float, float] = (-1.0, 1.0)
+        """Range for linear velocity in target's y direction (in m/s)."""
+
+        vel_yaw: tuple[float, float] = (-1.0, 1.0)
+        """Range for angular velocity around z-axis (in rad/s)."""
+
     class_type: type = UniformWorldPoseCommand

@@ -23,6 +23,7 @@ from isaaclab.utils.math import (
     quat_from_euler_xyz,
     quat_unique,
     quat_apply_inverse,
+    quat_apply,
     quat_from_matrix,
     sample_uniform,
     axis_angle_from_quat,
@@ -91,6 +92,10 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.pos_improvement = torch.zeros(self.num_envs, device=self.device)
         self.orient_improvement = torch.zeros(self.num_envs, device=self.device)
 
+        # Velocity commands: sampled in target pose frame, transformed to body frame for observation
+        self.pose_command_vel_t = torch.zeros(self.num_envs, 3, device=self.device)  # [vel_x, vel_y, vel_yaw] in target frame
+        self.pose_command_vel_b = torch.zeros(self.num_envs, 3, device=self.device)  # [vel_x, vel_y, vel_yaw] in body frame
+
     def _update_metrics(self):
         # refresh the pose_command_b
         self.pose_command_b[:, :3] = quat_apply_inverse(
@@ -99,6 +104,14 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.pose_command_b[:, 3:] = quat_unique(
             quat_mul(quat_inv(self.robot.data.root_link_quat_w), self.pose_command_w[:, 3:])
         )
+
+        # transform velocities from target frame to body frame
+        # Linear velocities: rotate by the inverse of target orientation relative to body
+        self.pose_command_vel_b[:, :2] = quat_apply_inverse(
+            self.pose_command_b[:, 3:], torch.cat([self.pose_command_vel_t[:, :2], torch.zeros(self.num_envs, 1, device=self.device)], dim=-1)
+        )[:, :2]
+        # Angular velocity: frame-independent around z-axis
+        self.pose_command_vel_b[:, 2] = self.pose_command_vel_t[:, 2]
 
         # compute the error
         pos_error = self.pose_command_w[:, :3] - self.robot.data.root_link_pos_w
@@ -125,6 +138,14 @@ class UniformWorldPoseCommand(UniformPoseCommand):
             quat_mul(quat_inv(self.robot.data.root_link_quat_w), self.pose_command_w[:, 3:])
         )
 
+        # transform velocities from target frame to body frame
+        # Linear velocities: rotate by the inverse of target orientation relative to body
+        self.pose_command_vel_b[:, :2] = quat_apply_inverse(
+            self.pose_command_b[:, 3:], torch.cat([self.pose_command_vel_t[:, :2], torch.zeros(self.num_envs, 1, device=self.device)], dim=-1)
+        )[:, :2]
+        # Angular velocity: frame-independent around z-axis
+        self.pose_command_vel_b[:, 2] = self.pose_command_vel_t[:, 2]
+
         # compute the error
         pos_error = self.pose_command_w[:, :3] - self.robot.data.root_link_pos_w
         rot_error_angle = compute_rotation_distance(
@@ -142,6 +163,45 @@ class UniformWorldPoseCommand(UniformPoseCommand):
 
         self.pos_improvement[env_ids] = 0.0
         self.orient_improvement[env_ids] = 0.0
+
+    def _update_command(self):
+        """Update the target pose based on velocity commands.
+
+        This function integrates the velocity commands to update the target pose position
+        and orientation. The velocities are defined in the target's own frame.
+        """
+        # Get timestep
+        dt = self._env.step_dt
+
+        # Only update if velocities are configured
+        if hasattr(self.cfg.ranges, 'vel_x') and hasattr(self.cfg.ranges, 'vel_y') and hasattr(self.cfg.ranges, 'vel_yaw'):
+            # Transform linear velocities from target frame to world frame
+            # Create 3D velocity vector [vel_x, vel_y, 0] in target frame
+            vel_t_3d = torch.cat([
+                self.pose_command_vel_t[:, :2],
+                torch.zeros(self.num_envs, 1, device=self.device)
+            ], dim=-1)
+
+            # Rotate by target orientation to get world frame velocity
+            vel_w_3d = quat_apply(self.pose_command_w[:, 3:], vel_t_3d)
+
+            # Update target position (only x and y, keep z constant)
+            self.pose_command_w[:, :2] += vel_w_3d[:, :2] * dt
+
+            # Update target orientation based on yaw velocity
+            # Create incremental rotation quaternion around z-axis
+            delta_yaw = self.pose_command_vel_t[:, 2] * dt
+            delta_quat = quat_from_euler_xyz(
+                torch.zeros_like(delta_yaw),
+                torch.zeros_like(delta_yaw),
+                delta_yaw
+            )
+
+            # Apply rotation: new_quat = current_quat * delta_quat
+            self.pose_command_w[:, 3:] = quat_mul(self.pose_command_w[:, 3:], delta_quat)
+
+            # Normalize and make unique
+            self.pose_command_w[:, 3:] = quat_unique(self.pose_command_w[:, 3:])
 
     def _resample_command(self, env_ids: Sequence[int]):
         # sample new pose targets
@@ -165,6 +225,11 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.decrease_vel[env_ids] = sample_uniform(
             self.decrease_vel_range[0], self.decrease_vel_range[1], len(env_ids), device=self.device
         )
+        # -- velocities (sampled in target pose frame)
+        if hasattr(self.cfg.ranges, 'vel_x') and hasattr(self.cfg.ranges, 'vel_y') and hasattr(self.cfg.ranges, 'vel_yaw'):
+            self.pose_command_vel_t[env_ids, 0] = r.uniform_(*self.cfg.ranges.vel_x)
+            self.pose_command_vel_t[env_ids, 1] = r.uniform_(*self.cfg.ranges.vel_y)
+            self.pose_command_vel_t[env_ids, 2] = r.uniform_(*self.cfg.ranges.vel_yaw)
 
     def _resample(self, env_ids):
         """Resample the command.

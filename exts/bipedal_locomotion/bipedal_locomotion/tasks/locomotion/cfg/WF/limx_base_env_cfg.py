@@ -96,15 +96,25 @@ class CommandsCfg:
         resampling_time_range=(5.0, 10.0),
         resampling_time_scale=(0.5, 5.0),
         make_quat_unique=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
+        ranges=mdp.UniformWorldPoseCommandCfg.Ranges(
+            # pos lin
             pos_x=(-0.2, 0.2),  # min max [m]
             pos_y=(-0.2, 0.2),  # min max [m]
             # pos_x=(-2.0, 2.0),  # min max [m]
             # pos_y=(-2.0, 2.0),  # min max [m]
             pos_z=(0.7, 1.1),  # min max [m]
+
+            # pos ang
             roll=(-0.0, 0.0),  # min max [rad]
             pitch=(-0.0, 0.0),  # min max [rad]
-            yaw=(-3.2, 3.2),  # min max [rad]),
+            yaw=(-3.2, 3.2),  # min max [rad]
+
+            # vel
+            vel_x=(-0.0, 0.0),  # min max [m/s] in target frame
+            vel_y=(-0.0, 0.0),  # min max [m/s] in target frame
+            # vel_x=(-1.0, 1.0),  # min max [m/s] in target frame
+            # vel_y=(-1.0, 1.0),  # min max [m/s] in target frame
+            vel_yaw=(-0.0, 0.0),  # min max [rad/s]
         ),
         se3_decrease_vel_range=(0.5, 1.4),
         debug_vis=True,
@@ -128,6 +138,7 @@ class ObservationsCfg:
     class CommandsObsCfg(ObsGroup):
         base_pose_commands = ObsTerm(func=mdp.base_commands_b)
         base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
+        base_commands_vel = ObsTerm(func=mdp.base_commands_vel_b)
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -499,7 +510,15 @@ class CurriculumCfg:
     pos_commands_ranges_level = CurrTerm(
         func=mdp.pos_commands_ranges_level,  # type: ignore
         params={
-            "max_range": {"pos_x": (-5.0, 5.0), "pos_y": (-5.0, 5.0)},
+            "max_range": {
+                # pos
+                "pos_x": (-1.0, 1.0),
+                "pos_y": (-1.0, 1.0),
+                # vel
+                "vel_x": (-1.0, 1.0),
+                "vel_y": (-1.0, 1.0),
+                "vel_yaw": (-2.0, 2.0),
+            },
             "update_interval": 80 * 24,  # 80 iterations * 24 steps per iteration
             "command_name": "base_pose",
         },
