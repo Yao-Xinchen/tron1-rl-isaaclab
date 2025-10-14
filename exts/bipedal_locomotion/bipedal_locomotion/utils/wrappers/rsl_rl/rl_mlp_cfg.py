@@ -18,21 +18,6 @@ class RslRlPpoAlgorithmMlpCfg(RslRlPpoAlgorithmCfg):
 
     obs_history_len: int = 1
 
-    adaptive_entropy_cfg = {
-        "enable": True,
-        "start_value": 0.015,
-        "end_value": 0.0005,
-        "start_point": 0,
-        "end_point": 5000,
-    }
-    gradient_penalty_cfg = {
-        "enable": True,
-        "start_point": 0.0,
-        "start_value": 0.0,
-        "end_value": 0.0002,
-        "end_point": 6000,
-    }
-
 
 @configclass
 class EncoderCfg:
@@ -56,7 +41,6 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
     dummy_input = torch.randn(1, input_dim)
     input_names = ["mlp_input"]
     output_names = ["mlp_output"]
-    dynamic_axes = {"mlp_input": {0: "batch_size"}, "mlp_output": {0: "batch_size"}}
 
     torch.onnx.export(
         model,
@@ -65,9 +49,9 @@ def export_mlp_as_onnx(mlp, path, name, input_dim):
         verbose=True,
         input_names=input_names,
         output_names=output_names,
-        dynamic_axes=dynamic_axes,
         export_params=True,
         opset_version=13,
+        dynamic_axes={"mlp_input": {0: "batch_size"}, "mlp_output": {0: "batch_size"}},
     )
     print("Exported policy as onnx script to: ", path)
 

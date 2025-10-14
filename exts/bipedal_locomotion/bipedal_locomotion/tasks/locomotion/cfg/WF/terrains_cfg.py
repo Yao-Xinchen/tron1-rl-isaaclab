@@ -22,7 +22,7 @@ ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
     horizontal_scale=0.1,
     vertical_scale=0.005,
     slope_threshold=0.75,
-    use_cache=False,
+    use_cache=True,
     sub_terrains={
         "boxes": MeshRandomGridTerrainCfg(
             proportion=0.2, grid_width=0.45, grid_height_range=(0.05, 0.2), platform_width=2.0

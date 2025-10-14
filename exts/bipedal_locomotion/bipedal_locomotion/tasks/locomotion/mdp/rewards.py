@@ -565,7 +565,7 @@ def safety_reward_exp(
     # compute base error
     base_orient_error_roll = torch.abs(asset.data.projected_gravity_b[:, 1]) / 0.1
     base_orient_error_pitch = torch.abs(asset.data.projected_gravity_b[:, 0]) / 0.85
-    base_height_error = torch.abs((base_height - base_height_target)) / 0.2  # not used
+    base_height_error = ((base_height - base_height_target) / 0.1) ** 2
 
     # body velocity penalty
     wheel_vel_error = (torch.sum(torch.abs(asset.data.joint_vel[:, env._wheels_joint_ids]), dim=1) / 3.0).clip(max=4)
@@ -586,8 +586,8 @@ def safety_reward_exp(
         foot_pos_error_b / 2.0  # 2
         + base_orient_error_pitch  # 0.5
         + base_orient_error_roll  # 0.5
-        + base_height_error  # 1
-    ) / 4.0
+        + base_height_error * 2 # 1
+    ) / 5.0
 
     mani_safety_scale = torch.exp(-normalized_mani_error / std**2)
 
@@ -595,7 +595,7 @@ def safety_reward_exp(
 
     env._mani_safety_scale = mani_safety_scale + 0.4
     env._loco_safety_scale = loco_safety_scale + 0.4
-    
+
     return mani_safety_scale * .5 + loco_safety_scale * .5
 
 def track_base_linear_velocity_exp(

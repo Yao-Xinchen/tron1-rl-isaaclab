@@ -41,7 +41,6 @@ import gymnasium as gym
 import onnxruntime as ort
 import os
 import torch
-import numpy as np
 
 from rsl_rl.runner import OnPolicyRunner
 
@@ -102,7 +101,7 @@ def main():
     # obtain the trained policy for inference
     teacher_policy = ppo_runner.get_inference_policy_teacher(device=env.unwrapped.device)
 
-    # export policy to onnx and use for inference if enabled
+    # export policy to onnx
     if EXPORT_POLICY:
         export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
         export_mlp_as_onnx(
@@ -118,60 +117,8 @@ def main():
             ppo_runner.alg.actor_critic.encoder_input_dim,
         )
 
-        # Load ONNX models for inference
-        policy_onnx_path = os.path.join(export_model_dir, "policy.onnx")
-        encoder_onnx_path = os.path.join(export_model_dir, "encoder.onnx")
-
-        print(f"[INFO] Loading ONNX policy model from: {policy_onnx_path}")
-        print(f"[INFO] Loading ONNX encoder model from: {encoder_onnx_path}")
-
-        # Use CUDA provider for ONNX Runtime
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        policy_session = ort.InferenceSession(policy_onnx_path, providers=providers)
-        encoder_session = ort.InferenceSession(encoder_onnx_path, providers=providers)
-
-        def onnx_student_policy(obs, obs_history, commands):
-            # # Encode observation history
-            # encoded_obs = encoder_session.run(
-            #     ["mlp_output"],
-            #     {"mlp_input": obs_history.cpu().numpy()}
-            # )[0]
-            #
-            # # Concatenate encoded observations with commands
-            # policy_input = torch.cat([
-            #     torch.from_numpy(encoded_obs).to(obs.device),
-            #     obs,
-            #     commands
-            # ], dim=-1)
-
-            obs_np = obs.cpu().numpy()
-            commands_np = commands.cpu().numpy()
-            obs_history_np = obs_history.cpu().numpy()
-
-            # Encode observation history
-            encoded_obs = encoder_session.run(
-                ["mlp_output"],
-                {"mlp_input": obs_history_np}
-            )[0]
-
-            # Concatenate encoded observations with commands
-            policy_input_np = np.concatenate(
-                [encoded_obs, obs_np, commands_np],
-                axis=-1
-            ).astype(np.float32)
-
-            # Run policy inference
-            actions = policy_session.run(
-                ["mlp_output"],
-                {"mlp_input": policy_input_np}
-            )[0]
-
-            return torch.from_numpy(actions).to(obs.device)
-
-        student_policy = onnx_student_policy
-    else:
-        # Fall back to PyTorch student policy
-        student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
+    # Fall back to PyTorch student policy
+    student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
 
     # reset environment
     obs, obs_dict = env.get_observations()

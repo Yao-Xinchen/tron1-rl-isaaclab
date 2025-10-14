@@ -32,6 +32,7 @@ import time
 import os
 from collections import deque
 import statistics
+from datetime import datetime
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -117,10 +118,58 @@ class OnPolicyRunner:
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
+            skip_update = False
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
+                    # Detect NaN in observations for each environment
+                    obs_valid = torch.isfinite(obs).all(dim=tuple(range(1, obs.ndim)))
+                    obs_history_valid = torch.isfinite(obs_history).all(dim=tuple(range(1, obs_history.ndim)))
+                    critic_obs_valid = torch.isfinite(critic_obs).all(dim=tuple(range(1, critic_obs.ndim)))
+                    commands_valid = torch.isfinite(commands).all(dim=tuple(range(1, commands.ndim)))
+
+                    valid_mask = obs_valid & obs_history_valid & critic_obs_valid & commands_valid
+                    nan_mask = ~valid_mask
+
+                    # If any NaN detected, replace with data from a healthy environment
+                    if nan_mask.any():
+                        # Find a healthy environment to copy from
+                        healthy_indices = valid_mask.nonzero(as_tuple=True)[0]
+                        if len(healthy_indices) == 0:
+                            # All environments have NaN - this is catastrophic
+                            print(f"[ERROR] All environments have NaN at iteration {it}, step {i}. Skipping entire iteration.")
+                            skip_update = True
+                            break  # Exit rollout loop
+
+                        healthy_idx = healthy_indices[0].item()
+                        nan_env_indices = nan_mask.nonzero(as_tuple=True)[0]
+
+                        # Log warning
+                        warning_msg = f"[WARNING] NaN detected in {len(nan_env_indices)} environments at iteration {it}, step {i}. Copying from env {healthy_idx}."
+                        print(warning_msg)
+
+                        # Log to file
+                        if self.log_dir is not None:
+                            log_file = os.path.join(self.log_dir, 'nan_observations.log')
+                            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            with open(log_file, 'a') as f:
+                                f.write(f"Timestamp: {timestamp}\n")
+                                f.write(f"Iteration: {it}, Step: {i}/{self.num_steps_per_env}\n")
+                                f.write(f"Affected env indices: {nan_env_indices.tolist()}\n")
+                                f.write(f"Copying from healthy env: {healthy_idx}\n")
+                                f.write(f"{'='*80}\n\n")
+
+                        # Replace NaN observations with healthy environment's observations
+                        obs[nan_mask] = obs[healthy_idx].clone()
+                        obs_history[nan_mask] = obs_history[healthy_idx].clone()
+                        critic_obs[nan_mask] = critic_obs[healthy_idx].clone()
+                        commands[nan_mask] = commands[healthy_idx].clone()
+
                     actions = self.alg.act(obs, obs_history, critic_obs, commands)
+
+                    # Copy healthy environment's actions to NaN environments
+                    if nan_mask.any():
+                        actions[nan_mask] = actions[healthy_idx].clone()
                     (obs, rewards, dones, infos) = self.env.step(actions)
                     critic_obs = infos["observations"]["critic"]
                     obs_history = infos["observations"]["obsHistory"].flatten(start_dim=1)
@@ -156,6 +205,13 @@ class OnPolicyRunner:
 
                 stop = time.time()
                 collection_time = stop - start
+
+                # Skip update if catastrophic NaN detected during rollout
+                if skip_update:
+                    print(f"[WARNING] Skipping policy update for iteration {it} due to catastrophic NaN")
+                    self.alg.storage.clear()  # Reset rollout buffer for next iteration
+                    ep_infos.clear()
+                    continue
 
                 # Learning step
                 start = stop
