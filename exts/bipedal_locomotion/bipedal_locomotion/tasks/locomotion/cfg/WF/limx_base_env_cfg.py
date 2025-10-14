@@ -135,10 +135,15 @@ class ActionsCfg:
 class ObservationsCfg:
     """Observation specifications for the MDP"""
 
+    @configclass
     class CommandsObsCfg(ObsGroup):
         base_pose_commands = ObsTerm(func=mdp.base_commands_b)
         base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
         base_commands_vel = ObsTerm(func=mdp.base_commands_vel_c)
+
+        def __post_init__(self):
+            self.enable_corruption = True
+            self.concatenate_terms = True
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -279,8 +284,8 @@ class EventsCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.6, 1.2),
-            "dynamic_friction_range": (0.4, 0.9),
+            "static_friction_range": (0.4, 1.2),
+            "dynamic_friction_range": (0.2, 0.9),
             "restitution_range": (0.0, 1.0),
             "num_buckets": 48,
         },
