@@ -74,7 +74,7 @@ def velocity_commands_ranges_level(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     max_range: dict[str, tuple[float, float]],
-    update_interval: int = 50 * 24,
+    update_interval: int = 80 * 24,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     command_name: str = "base_twist",
 ) -> torch.Tensor:
@@ -88,8 +88,8 @@ def velocity_commands_ranges_level(
     current_vx = command_cfg.ranges.lin_vel_x[1]
     
     if env.common_step_counter % update_interval == 0:
-        new_vx = command_cfg.ranges.lin_vel_x[1] + 0.1  # Increase by 0.1 m/s
-        new_vy = command_cfg.ranges.lin_vel_y[1] + 0.04  # Increase by 0.04 m/s
+        new_vx = command_cfg.ranges.lin_vel_x[1] + 0.05  # Increase by 0.1 m/s
+        new_vy = command_cfg.ranges.lin_vel_y[1] + 0.05  # Increase by 0.04 m/s
         new_wz = command_cfg.ranges.ang_vel_z[1] + 0.1   # Increase by 0.1 rad/s
         
         # Clamp to maximum ranges
