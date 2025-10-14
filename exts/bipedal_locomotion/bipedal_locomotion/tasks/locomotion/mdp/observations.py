@@ -201,6 +201,23 @@ def base_commands_b(
         ], dim=-1
     )
 
+def fake_base_commands_b(
+    env: ManagerBasedRLEnv,
+):
+    target_dist_scaled = torch.zeros((env.num_envs, 1), device=env.device) + 0.001
+    target_direction = torch.zeros((env.num_envs, 2), device=env.device)
+    target_direction[:, 0] = 1.0
+    target_orientation_x = torch.zeros((env.num_envs, 2), device=env.device)
+    target_orientation_x[:, 0] = 1.0
+
+    return torch.cat(
+        [
+            target_dist_scaled,
+            target_direction,
+            target_orientation_x,
+        ], dim=-1
+    )
+
 def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:
     base_pose_command = env.command_manager.get_term("base_pose")
     return base_pose_command.decrease_vel.unsqueeze(-1)

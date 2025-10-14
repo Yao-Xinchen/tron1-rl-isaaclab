@@ -82,16 +82,28 @@ def sample_unit_circle_commands(num_envs: int, magnitude: float = 1.0, device: s
     return commands, angles
 
 
-def override_velocity_commands(env, commands: torch.Tensor):
-    """Override the velocity commands in the environment's command manager.
+def override_pose_commands(env, commands: torch.Tensor):
+    """Override the pose commands to achieve velocity control.
+
+    Sets the target pose to the robot's current pose (making relative pose zero)
+    and sets the velocity in the command frame to the desired velocity.
 
     Args:
         env: The wrapped environment
-        commands: Tensor of shape (num_envs, 3) with [vx, vy, angular_z]
+        commands: Tensor of shape (num_envs, 3) with [vx, vy, angular_z] velocities
     """
-    # Access the command term and set commands directly
-    command_term = env.unwrapped.command_manager._terms["base_twist"]
-    command_term.command[:] = commands
+    # Access the base_pose command term
+    command_term = env.unwrapped.command_manager._terms["base_pose"]
+    robot = env.unwrapped.scene["robot"]
+
+    # Set target pose to robot's current pose (zero relative distance)
+    # This makes the robot "believe" it has reached the target
+    command_term.pose_command_w[:, :3] = robot.data.root_link_pos_w.clone()
+    command_term.pose_command_w[:, 3:] = robot.data.root_link_quat_w.clone()
+
+    # Set velocity commands in command frame (which equals body frame when pose is at robot)
+    # pose_command_vel_c is [vel_x, vel_y, vel_yaw] in target frame
+    command_term.pose_command_vel_c[:] = commands
 
 
 def calculate_velocity_error(env, target_commands: torch.Tensor):
@@ -176,7 +188,7 @@ def run_experiment():
     )
 
     # Override the commands
-    override_velocity_commands(env, commands)
+    override_pose_commands(env, commands)
 
     # Reset environment
     obs, obs_dict = env.get_observations()
@@ -198,7 +210,7 @@ def run_experiment():
 
     for step in range(total_steps):
         # Override commands at each step to prevent resampling
-        override_velocity_commands(env, commands)
+        override_pose_commands(env, commands)
 
         # Run policy inference
         with torch.inference_mode():
@@ -213,7 +225,7 @@ def run_experiment():
             commands_obs = infos["observations"].get("commands")
 
         # Override commands again after step (in case command manager resamples)
-        override_velocity_commands(env, commands)
+        override_pose_commands(env, commands)
 
         # Start collecting after warmup
         if step >= args_cli.warmup_steps:
