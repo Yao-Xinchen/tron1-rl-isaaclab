@@ -138,7 +138,7 @@ class ObservationsCfg:
     class CommandsObsCfg(ObsGroup):
         base_pose_commands = ObsTerm(func=mdp.base_commands_b)
         base_se3_decrease_rate = ObsTerm(func=mdp.base_se3_decrease_rate)
-        base_commands_vel = ObsTerm(func=mdp.base_commands_vel_b)
+        base_commands_vel = ObsTerm(func=mdp.base_commands_vel_c)
 
     @configclass
     class PolicyCfg(ObsGroup):

@@ -93,8 +93,7 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.orient_improvement = torch.zeros(self.num_envs, device=self.device)
 
         # Velocity commands: sampled in target pose frame, transformed to body frame for observation
-        self.pose_command_vel_t = torch.zeros(self.num_envs, 3, device=self.device)  # [vel_x, vel_y, vel_yaw] in target frame
-        self.pose_command_vel_b = torch.zeros(self.num_envs, 3, device=self.device)  # [vel_x, vel_y, vel_yaw] in body frame
+        self.pose_command_vel_c = torch.zeros(self.num_envs, 3, device=self.device)  # [vel_x, vel_y, vel_yaw] in target frame
 
     def _update_metrics(self):
         # refresh the pose_command_b
@@ -104,14 +103,6 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.pose_command_b[:, 3:] = quat_unique(
             quat_mul(quat_inv(self.robot.data.root_link_quat_w), self.pose_command_w[:, 3:])
         )
-
-        # transform velocities from target frame to body frame
-        # Linear velocities: rotate by the inverse of target orientation relative to body
-        self.pose_command_vel_b[:, :2] = quat_apply_inverse(
-            self.pose_command_b[:, 3:], torch.cat([self.pose_command_vel_t[:, :2], torch.zeros(self.num_envs, 1, device=self.device)], dim=-1)
-        )[:, :2]
-        # Angular velocity: frame-independent around z-axis
-        self.pose_command_vel_b[:, 2] = self.pose_command_vel_t[:, 2]
 
         # compute the error
         pos_error = self.pose_command_w[:, :3] - self.robot.data.root_link_pos_w
@@ -137,14 +128,6 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.pose_command_b[:, 3:] = quat_unique(
             quat_mul(quat_inv(self.robot.data.root_link_quat_w), self.pose_command_w[:, 3:])
         )
-
-        # transform velocities from target frame to body frame
-        # Linear velocities: rotate by the inverse of target orientation relative to body
-        self.pose_command_vel_b[:, :2] = quat_apply_inverse(
-            self.pose_command_b[:, 3:], torch.cat([self.pose_command_vel_t[:, :2], torch.zeros(self.num_envs, 1, device=self.device)], dim=-1)
-        )[:, :2]
-        # Angular velocity: frame-independent around z-axis
-        self.pose_command_vel_b[:, 2] = self.pose_command_vel_t[:, 2]
 
         # compute the error
         pos_error = self.pose_command_w[:, :3] - self.robot.data.root_link_pos_w
@@ -178,7 +161,7 @@ class UniformWorldPoseCommand(UniformPoseCommand):
             # Transform linear velocities from target frame to world frame
             # Create 3D velocity vector [vel_x, vel_y, 0] in target frame
             vel_t_3d = torch.cat([
-                self.pose_command_vel_t[:, :2],
+                self.pose_command_vel_c[:, :2],
                 torch.zeros(self.num_envs, 1, device=self.device)
             ], dim=-1)
 
@@ -190,7 +173,7 @@ class UniformWorldPoseCommand(UniformPoseCommand):
 
             # Update target orientation based on yaw velocity
             # Create incremental rotation quaternion around z-axis
-            delta_yaw = self.pose_command_vel_t[:, 2] * dt
+            delta_yaw = self.pose_command_vel_c[:, 2] * dt
             delta_quat = quat_from_euler_xyz(
                 torch.zeros_like(delta_yaw),
                 torch.zeros_like(delta_yaw),
@@ -227,9 +210,9 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         )
         # -- velocities (sampled in target pose frame)
         if hasattr(self.cfg.ranges, 'vel_x') and hasattr(self.cfg.ranges, 'vel_y') and hasattr(self.cfg.ranges, 'vel_yaw'):
-            self.pose_command_vel_t[env_ids, 0] = r.uniform_(*self.cfg.ranges.vel_x)
-            self.pose_command_vel_t[env_ids, 1] = r.uniform_(*self.cfg.ranges.vel_y)
-            self.pose_command_vel_t[env_ids, 2] = r.uniform_(*self.cfg.ranges.vel_yaw)
+            self.pose_command_vel_c[env_ids, 0] = r.uniform_(*self.cfg.ranges.vel_x)
+            self.pose_command_vel_c[env_ids, 1] = r.uniform_(*self.cfg.ranges.vel_y)
+            self.pose_command_vel_c[env_ids, 2] = r.uniform_(*self.cfg.ranges.vel_yaw)
 
     def _resample(self, env_ids):
         """Resample the command.
