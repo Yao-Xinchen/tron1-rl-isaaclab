@@ -204,9 +204,8 @@ def base_commands_b(
 def fake_base_commands_b(
     env: ManagerBasedRLEnv,
 ):
-    target_dist_scaled = torch.zeros((env.num_envs, 1), device=env.device) + 0.001
+    target_dist_scaled = torch.zeros((env.num_envs, 1), device=env.device)
     target_direction = torch.zeros((env.num_envs, 2), device=env.device)
-    target_direction[:, 0] = 1.0
     target_orientation_x = torch.zeros((env.num_envs, 2), device=env.device)
     target_orientation_x[:, 0] = 1.0
 
