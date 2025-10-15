@@ -13,6 +13,8 @@ from datetime import datetime
 from isaaclab.app import AppLauncher
 
 # local imports
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import cli_args  # isort: skip
 
 # add argparse arguments
@@ -27,7 +29,7 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 parser.add_argument("--warmup_steps", type=int, default=200, help="Number of warmup steps before data collection.")
 parser.add_argument("--collection_steps", type=int, default=600, help="Number of steps for data collection.")
 parser.add_argument("--num_angle_bins", type=int, default=128, help="Number of angular bins for analysis.")
-parser.add_argument("--output_dir", type=str, default="experiments/twist", help="Directory to save results.")
+parser.add_argument("--output_dir", type=str, default="experiments/tracking_error/twist", help="Directory to save results.")
 parser.add_argument("--velocity_magnitude", type=float, default=1.0, help="Magnitude of velocity commands on the circle.")
 
 # append RSL-RL cli arguments
