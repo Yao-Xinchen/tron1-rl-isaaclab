@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from pathlib import Path
+from datetime import datetime
 
 from isaaclab.app import AppLauncher
 
@@ -26,7 +27,7 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 parser.add_argument("--warmup_steps", type=int, default=200, help="Number of warmup steps before data collection.")
 parser.add_argument("--collection_steps", type=int, default=600, help="Number of steps for data collection.")
 parser.add_argument("--num_angle_bins", type=int, default=128, help="Number of angular bins for analysis.")
-parser.add_argument("--output_dir", type=str, default="experiments", help="Directory to save results.")
+parser.add_argument("--output_dir", type=str, default="experiments/pose", help="Directory to save results.")
 parser.add_argument("--velocity_magnitude", type=float, default=1.0, help="Magnitude of velocity commands on the circle.")
 
 # append RSL-RL cli arguments
@@ -155,8 +156,9 @@ def run_experiment():
         resume_path = args_cli.checkpoint_path
     log_dir = os.path.dirname(resume_path)
 
-    # Create output directory
-    output_dir = Path(args_cli.output_dir)
+    # Create output directory with datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = Path(args_cli.output_dir) / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"[INFO] Results will be saved to: {output_dir}")
 
@@ -427,7 +429,7 @@ def analyze_and_visualize(errors, angles, commands, output_dir, num_bins):
     ax.set_title(f'Velocity Tracking Error by Command Direction\n(showing {display_mask.sum()}/{len(errors)} robots with errors ≤ {error_max_display:.2f} m/s)',
                 fontsize=13, pad=20)
     ax.set_ylabel('Error (m/s)', labelpad=40)
-    plt.colorbar(scatter, ax=ax, label='Error (m/s)', pad=0.1)
+    # plt.colorbar(scatter, ax=ax, label='Error (m/s)', pad=0.1)
 
     # Calculate directional mean and median using angular bins
     polar_bins = 72  # Higher resolution for smoother curves
