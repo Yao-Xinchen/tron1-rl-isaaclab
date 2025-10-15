@@ -13,6 +13,8 @@ from datetime import datetime
 from isaaclab.app import AppLauncher
 
 # local imports
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import cli_args  # isort: skip
 
 # add argparse arguments
