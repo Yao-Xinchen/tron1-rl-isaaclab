@@ -31,7 +31,7 @@ parser.add_argument("--collection_steps", type=int, default=500, help="Number of
 parser.add_argument("--dt", type=float, default=0.02, help="Simulation timestep in seconds.")
 parser.add_argument("--output_dir", type=str, default="experiments/position_error", help="Directory to save results.")
 parser.add_argument("--pos_range", type=float, default=1.0, help="Position command range in meters (symmetric).")
-parser.add_argument("--num_bins", type=int, default=16, help="Number of bins for velocity binning.")
+parser.add_argument("--num_bins", type=int, default=10, help="Number of bins for velocity binning.")
 
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
@@ -302,14 +302,15 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
         ax1.plot(vel_sorted, p(vel_sorted), "r--", linewidth=2, alpha=0.8, label='Quadratic Fit')
         ax1.legend(fontsize=10)
 
-    # Plot 2: Binned statistics
+    # Plot 2: Binned violin plot
     num_bins = args_cli.num_bins
     bin_edges = np.linspace(0, 1, num_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    bin_means = []
-    bin_stds = []
+    # Collect data for each bin
+    bin_data = []
     bin_counts = []
+    valid_positions = []
 
     for i in range(num_bins):
         mask = (vel_magnitudes >= bin_edges[i]) & (vel_magnitudes < bin_edges[i + 1])
@@ -317,31 +318,31 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
             mask = (vel_magnitudes >= bin_edges[i]) & (vel_magnitudes <= bin_edges[i + 1])
 
         if mask.sum() > 0:
-            bin_means.append(avg_errors[mask].mean())
-            bin_stds.append(avg_errors[mask].std())
+            bin_data.append(avg_errors[mask])
             bin_counts.append(mask.sum())
-        else:
-            bin_means.append(np.nan)
-            bin_stds.append(np.nan)
-            bin_counts.append(0)
+            valid_positions.append(bin_centers[i])
 
-    bin_means = np.array(bin_means)
-    bin_stds = np.array(bin_stds)
-    bin_counts = np.array(bin_counts)
+    # Create violin plot
+    if len(bin_data) > 0:
+        parts = ax2.violinplot(bin_data, positions=valid_positions, widths=0.04,
+                              showmeans=True, showmedians=False, showextrema=False)
 
-    # Plot mean with error bars
-    ax2.errorbar(bin_centers, bin_means, yerr=bin_stds, fmt='o-', linewidth=2,
-                 markersize=8, capsize=5, capthick=2, color='darkorange', label='Mean +/- Std')
+        # Customize violin plot colors
+        for pc in parts['bodies']:
+            pc.set_facecolor('darkorange')
+            pc.set_alpha(0.6)
+            pc.set_edgecolor('black')
+            pc.set_linewidth(1)
+
+        # Customize mean line
+        parts['cmeans'].set_color('red')
+        parts['cmeans'].set_linewidth(2)
+
     ax2.set_xlabel('Velocity Magnitude (m/s)', fontsize=12)
     ax2.set_ylabel('Average Position Tracking Error (m)', fontsize=12)
-    ax2.set_title(f'Binned Statistics (n={num_bins} bins)', fontsize=13)
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(fontsize=10)
-
-    # Add bin counts as text
-    for i, (x, y, count) in enumerate(zip(bin_centers, bin_means, bin_counts)):
-        if not np.isnan(y):
-            ax2.text(x, y, f'n={count}', fontsize=8, ha='center', va='bottom')
+    ax2.set_title(f'Distribution of Tracking Error (n={num_bins} bins)', fontsize=13)
+    ax2.set_xlim(-0.05, 1.05)
+    ax2.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
 
