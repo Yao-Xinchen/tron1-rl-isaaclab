@@ -1,4 +1,4 @@
-"""Script to analyze hybrid motion with velocity control, contact patterns, and wheel rolling."""
+"""Script to evaluate wheel contact patterns and pose tracking during pose control."""
 
 """Launch Isaac Sim Simulator first."""
 
@@ -18,7 +18,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import cli_args  # isort: skip
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Analyze hybrid motion with diagonal velocity command.")
+parser = argparse.ArgumentParser(description="Analyze position-controlled motion with wheel contact and rolling patterns.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments (fixed to 1 for detailed analysis).")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
@@ -27,11 +27,10 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 
 # experiment-specific arguments
 parser.add_argument("--warmup_steps", type=int, default=0, help="Number of warmup steps before data collection.")
-parser.add_argument("--collection_steps", type=int, default=150, help="Number of steps for data collection.")
+parser.add_argument("--collection_steps", type=int, default=125, help="Number of steps for data collection.")
 parser.add_argument("--dt", type=float, default=0.02, help="Simulation timestep in seconds.")
-parser.add_argument("--output_dir", type=str, default="experiments/hybrid_motion", help="Directory to save results.")
-parser.add_argument("--vx", type=float, default=0.5, help="Forward velocity command (m/s).")
-parser.add_argument("--vy", type=float, default=0.5, help="Lateral velocity command (m/s).")
+parser.add_argument("--output_dir", type=str, default="experiments/position_motion", help="Directory to save results.")
+parser.add_argument("--pos_range", type=float, default=1.0, help="Position command range in meters (symmetric).")
 parser.add_argument("--contact_threshold", type=float, default=1.0, help="Contact force threshold in Newtons.")
 
 # append RSL-RL cli arguments
@@ -55,7 +54,6 @@ from rsl_rl.runner import OnPolicyRunner
 
 from isaaclab.envs import ManagerBasedRLEnvCfg, DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.math import quat_apply_inverse
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
@@ -64,58 +62,27 @@ import bipedal_locomotion  # noqa: F401
 from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlPpoAlgorithmMlpCfg
 
 
-def override_velocity_command(env, vx: float, vy: float):
-    """Override pose commands to achieve velocity control.
-
-    Sets target pose to robot's current pose (zero relative distance)
-    and sets velocity command in the command frame.
+def override_command_ranges(env):
+    """Override the command ranges to focus on pose tracking with zero velocity.
 
     Args:
         env: The wrapped environment
-        vx: Forward velocity command (m/s)
-        vy: Lateral velocity command (m/s)
     """
     command_term = env.unwrapped.command_manager._terms["base_pose"]
-    robot = env.unwrapped.scene["robot"]
 
-    # Set target pose to robot's current pose (zero relative distance)
-    command_term.pose_command_w[:, :3] = robot.data.root_link_pos_w.clone()
-    command_term.pose_command_w[:, 3:] = robot.data.root_link_quat_w.clone()
+    # Set position ranges to [-pos_range, pos_range]
+    command_term.cfg.ranges.pos_x = (-args_cli.pos_range, args_cli.pos_range)
+    command_term.cfg.ranges.pos_y = (-args_cli.pos_range, args_cli.pos_range)
 
-    # Set velocity commands in command frame (body frame when pose is at robot)
-    command_term.pose_command_vel_c[:, 0] = vx
-    command_term.pose_command_vel_c[:, 1] = vy
-    command_term.pose_command_vel_c[:, 2] = 0.0  # No yaw rotation
+    # Set velocity ranges to zero (no velocity commands)
+    if hasattr(command_term.cfg.ranges, 'vel_x'):
+        command_term.cfg.ranges.vel_x = (0.0, 0.0)
+        command_term.cfg.ranges.vel_y = (0.0, 0.0)
+        command_term.cfg.ranges.vel_yaw = (0.0, 0.0)
 
-
-def calculate_velocity_error(env, target_vx: float, target_vy: float):
-    """Calculate velocity tracking error in body frame.
-
-    Args:
-        env: The wrapped environment
-        target_vx: Target forward velocity (m/s)
-        target_vy: Target lateral velocity (m/s)
-
-    Returns:
-        error: Scalar tensor with L2 velocity error magnitude
-    """
-    robot = env.unwrapped.scene["robot"]
-
-    # Get actual velocity in world frame and robot orientation
-    actual_vel_w = robot.data.root_vel_w  # Shape: (1, 6) - [vx, vy, vz, wx, wy, wz]
-    root_quat_w = robot.data.root_quat_w  # Shape: (1, 4) - [w, x, y, z]
-
-    # Transform linear velocity from world to body frame
-    actual_lin_vel_b = quat_apply_inverse(root_quat_w, actual_vel_w[:, :3])
-
-    # Extract linear velocities (x, y) in body frame
-    actual_linear = actual_lin_vel_b[:, :2]
-    target_linear = torch.tensor([[target_vx, target_vy]], device=env.unwrapped.device)
-
-    # Calculate L2 error
-    error = torch.norm(actual_linear - target_linear, dim=1)
-
-    return error.item()  # Return scalar for single env
+    print(f"[INFO] Command ranges overridden:")
+    print(f"  Position XY: [{-args_cli.pos_range}, {args_cli.pos_range}] m")
+    print(f"  Velocities: [0.0, 0.0] m/s")
 
 
 def get_wheel_contacts(env, threshold: float = 1.0):
@@ -159,6 +126,20 @@ def get_wheel_contacts(env, threshold: float = 1.0):
     return left_contact, right_contact
 
 
+def get_pose_error(env):
+    """Get position error from pose target.
+
+    Args:
+        env: The wrapped environment
+
+    Returns:
+        position_error: Scalar with L2 position error for robot 0
+    """
+    command_term = env.unwrapped.command_manager.get_term("base_pose")
+    position_error = command_term.metrics["position_error"]
+    return position_error.item()  # Return scalar for single env
+
+
 def get_wheel_velocities(env):
     """Get angular velocities of left and right wheels.
 
@@ -183,7 +164,7 @@ def get_wheel_velocities(env):
 
 
 def run_experiment():
-    """Run the hybrid motion experiment."""
+    """Run the contact pattern experiment."""
 
     # Parse configuration
     env_cfg: ManagerBasedRLEnvCfg = parse_env_cfg(
@@ -210,7 +191,7 @@ def run_experiment():
     print(f"[INFO] Results will be saved to: {output_dir}")
 
     # Create isaac environment
-    print(f"[INFO] Creating environment with {args_cli.num_envs} robot...")
+    print(f"[INFO] Creating environment with {args_cli.num_envs} robots...")
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode=None)
 
     # Convert to single-agent instance if required by the RL algorithm
@@ -219,6 +200,9 @@ def run_experiment():
 
     # Wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env)
+
+    # Override command ranges
+    override_command_ranges(env)
 
     # Load previously trained model
     print(f"[INFO] Loading model checkpoint from: {resume_path}")
@@ -239,7 +223,6 @@ def run_experiment():
     total_steps = args_cli.warmup_steps + args_cli.collection_steps
 
     print(f"\n[INFO] Starting experiment...")
-    print(f"  Command velocity: vx={args_cli.vx} m/s, vy={args_cli.vy} m/s")
     print(f"  Warmup steps: {args_cli.warmup_steps}")
     print(f"  Collection steps: {args_cli.collection_steps}")
     print(f"  Total steps: {total_steps}")
@@ -250,9 +233,6 @@ def run_experiment():
 
     # Run simulation
     for step in range(total_steps):
-        # Override velocity command at each step
-        override_velocity_command(env, args_cli.vx, args_cli.vy)
-
         # Run policy inference
         with torch.inference_mode():
             # Agent stepping
@@ -265,13 +245,10 @@ def run_experiment():
             critic_obs = infos["observations"].get("critic")
             commands_obs = infos["observations"].get("commands")
 
-        # Override velocity command again after step
-        override_velocity_command(env, args_cli.vx, args_cli.vy)
-
         # Start recording after warmup
         if step >= args_cli.warmup_steps:
-            # Get velocity tracking error
-            vel_error = calculate_velocity_error(env, args_cli.vx, args_cli.vy)
+            # Get position error
+            pos_error = get_pose_error(env)
 
             # Get wheel contacts
             left_contact, right_contact = get_wheel_contacts(env, threshold=args_cli.contact_threshold)
@@ -282,7 +259,7 @@ def run_experiment():
             # Store data
             data_collection.append({
                 'step': step - args_cli.warmup_steps,
-                'vel_error': vel_error,
+                'pos_error': pos_error,
                 'left_contact': left_contact,
                 'right_contact': right_contact,
                 'left_vel': left_vel,
@@ -293,14 +270,19 @@ def run_experiment():
             if (step - args_cli.warmup_steps) % 50 == 0:
                 current_time = (step - args_cli.warmup_steps) * args_cli.dt
                 print(f"  Recording step {step - args_cli.warmup_steps}/{args_cli.collection_steps}, "
-                      f"t={current_time:.2f}s, vel_error: {vel_error:.4f} m/s")
+                      f"t={current_time:.2f}s, pos_error: {pos_error:.4f} m")
+
+    if len(data_collection) == 0:
+        print(f"\n[ERROR] No data collected!")
+        env.close()
+        return
 
     print(f"\n[INFO] Data collection complete!")
     print(f"  Total frames recorded: {len(data_collection)}")
 
-    # Process and visualize data
+    # Generate visualization
     print(f"\n[INFO] Generating visualization...")
-    visualize_hybrid_motion(data_collection, output_dir, args_cli.dt)
+    visualize_pos_motion(data_collection, output_dir, args_cli.dt)
 
     # Save data
     save_data(data_collection, output_dir)
@@ -311,8 +293,8 @@ def run_experiment():
     env.close()
 
 
-def visualize_hybrid_motion(data_collection, output_dir, dt):
-    """Create visualization with velocity error and wheel patterns.
+def visualize_pos_motion(data_collection, output_dir, dt):
+    """Create visualization with position error and wheel patterns.
 
     Args:
         data_collection: List of data frames
@@ -322,7 +304,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
     # Extract data
     steps = np.array([frame['step'] for frame in data_collection])
     times = steps * dt
-    vel_errors = np.array([frame['vel_error'] for frame in data_collection])
+    pos_errors = np.array([frame['pos_error'] for frame in data_collection])
     left_contacts = np.array([frame['left_contact'] for frame in data_collection])
     right_contacts = np.array([frame['right_contact'] for frame in data_collection])
     left_vels = np.array([frame['left_vel'] for frame in data_collection])
@@ -331,10 +313,10 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
     # Create figure with 3 subplots
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
 
-    # Subplot 1: Velocity Tracking Error
-    ax1.plot(times, vel_errors, linewidth=2, color='darkorange', label='Velocity Error')
-    ax1.set_ylabel('Velocity Error (m/s)', fontsize=11)
-    ax1.set_title(f'Hybrid Motion Analysis: Diagonal Movement (vx={args_cli.vx}, vy={args_cli.vy} m/s)', fontsize=13)
+    # Subplot 1: Position Tracking Error
+    ax1.plot(times, pos_errors, linewidth=2, color='darkorange', label='Position Error')
+    ax1.set_ylabel('Position Error (m)', fontsize=11)
+    ax1.set_title('Position Controlled Motion Analysis', fontsize=13)
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc='upper right', fontsize=10)
 
@@ -343,7 +325,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
     ax2_vel = ax2
     ax2_vel.plot(times, left_vels, linewidth=1.5, color='steelblue', label='Rolling Speed')
     ax2_vel.set_ylabel('Angular Velocity (rad/s)', fontsize=10, color='steelblue')
-    ax2_vel.set_ylim(-5, 10)
+    # ax2_vel.set_ylim(-5, 10)
     ax2_vel.tick_params(axis='y', labelcolor='steelblue')
     ax2_vel.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     ax2_vel.grid(True, alpha=0.3)
@@ -356,7 +338,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
                              label='Contact', step='mid')
     ax2_contact.set_ylim(-0.1, 1.1)
     ax2_contact.set_yticks([0, 1])
-    ax2_contact.set_yticklabels(['No Contact', 'Contact'])
+    ax2_contact.set_yticklabels([])
 
     # Combine legends
     lines1, labels1 = ax2_vel.get_legend_handles_labels()
@@ -369,7 +351,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
     ax3_vel.plot(times, right_vels, linewidth=1.5, color='steelblue', label='Rolling Speed')
     ax3_vel.set_ylabel('Angular Velocity (rad/s)', fontsize=10, color='steelblue')
     ax3_vel.set_xlabel('Time (s)', fontsize=11)
-    ax3_vel.set_ylim(-5, 10)
+    # ax3_vel.set_ylim(-5, 10)
     ax3_vel.tick_params(axis='y', labelcolor='steelblue')
     ax3_vel.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     ax3_vel.grid(True, alpha=0.3)
@@ -382,7 +364,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
                              label='Contact', step='mid')
     ax3_contact.set_ylim(-0.1, 1.1)
     ax3_contact.set_yticks([0, 1])
-    ax3_contact.set_yticklabels(['No Contact', 'Contact'])
+    ax3_contact.set_yticklabels([])
 
     # Combine legends
     lines1, labels1 = ax3_vel.get_legend_handles_labels()
@@ -392,7 +374,7 @@ def visualize_hybrid_motion(data_collection, output_dir, dt):
     plt.tight_layout()
 
     # Save figure
-    output_path = output_dir / 'hybrid_motion.png'
+    output_path = output_dir / 'position_motion.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"  Saved visualization to: {output_path}")
 
@@ -409,18 +391,18 @@ def save_data(data_collection, output_dir):
     import csv
 
     # Save detailed data
-    csv_path = output_dir / 'hybrid_motion_data.csv'
+    csv_path = output_dir / 'position_motion_data.csv'
 
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['step', 'time', 'velocity_error', 'left_contact', 'right_contact',
+        writer.writerow(['step', 'time', 'position_error', 'left_contact', 'right_contact',
                         'left_wheel_vel', 'right_wheel_vel'])
 
         for frame in data_collection:
             writer.writerow([
                 frame['step'],
                 frame['step'] * args_cli.dt,
-                frame['vel_error'],
+                frame['pos_error'],
                 frame['left_contact'],
                 frame['right_contact'],
                 frame['left_vel'],
@@ -433,27 +415,27 @@ def save_data(data_collection, output_dir):
     summary_path = output_dir / 'summary_statistics.txt'
 
     # Calculate statistics
-    vel_errors = np.array([frame['vel_error'] for frame in data_collection])
+    pos_errors = np.array([frame['pos_error'] for frame in data_collection])
     left_contacts = np.array([frame['left_contact'] for frame in data_collection])
     right_contacts = np.array([frame['right_contact'] for frame in data_collection])
     left_vels = np.array([frame['left_vel'] for frame in data_collection])
     right_vels = np.array([frame['right_vel'] for frame in data_collection])
 
     with open(summary_path, 'w') as f:
-        f.write("HYBRID MOTION EXPERIMENT SUMMARY\n")
+        f.write("POSITION CONTROLLED MOTION EXPERIMENT SUMMARY\n")
         f.write("=" * 70 + "\n\n")
-        f.write(f"Command velocity:           vx={args_cli.vx} m/s, vy={args_cli.vy} m/s\n")
+        f.write(f"Position range:             [{-args_cli.pos_range}, {args_cli.pos_range}] m\n")
         f.write(f"Warmup steps:               {args_cli.warmup_steps}\n")
         f.write(f"Collection steps:           {args_cli.collection_steps}\n")
         f.write(f"Timestep:                   {args_cli.dt} s\n")
         f.write(f"Contact threshold:          {args_cli.contact_threshold} N\n\n")
 
-        f.write("VELOCITY TRACKING STATISTICS\n")
+        f.write("POSITION TRACKING STATISTICS\n")
         f.write("-" * 70 + "\n")
-        f.write(f"Mean velocity error:        {vel_errors.mean():.6f} m/s\n")
-        f.write(f"Std velocity error:         {vel_errors.std():.6f} m/s\n")
-        f.write(f"Min velocity error:         {vel_errors.min():.6f} m/s\n")
-        f.write(f"Max velocity error:         {vel_errors.max():.6f} m/s\n\n")
+        f.write(f"Mean position error:        {pos_errors.mean():.6f} m\n")
+        f.write(f"Std position error:         {pos_errors.std():.6f} m\n")
+        f.write(f"Min position error:         {pos_errors.min():.6f} m\n")
+        f.write(f"Max position error:         {pos_errors.max():.6f} m\n\n")
 
         f.write("CONTACT STATISTICS\n")
         f.write("-" * 70 + "\n")
