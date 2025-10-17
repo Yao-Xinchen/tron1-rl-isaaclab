@@ -29,7 +29,7 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 parser.add_argument("--warmup_steps", type=int, default=200, help="Number of warmup steps before data collection.")
 parser.add_argument("--collection_steps", type=int, default=600, help="Number of steps for data collection.")
 parser.add_argument("--num_angle_bins", type=int, default=128, help="Number of angular bins for analysis.")
-parser.add_argument("--output_dir", type=str, default="experiments/velocity_error/pose", help="Directory to save results.")
+parser.add_argument("--output_dir", type=str, default="experiments/velocity_polar/pose", help="Directory to save results.")
 parser.add_argument("--velocity_magnitude", type=float, default=1.0, help="Magnitude of velocity commands on the circle.")
 parser.add_argument("--polar_radius", type=float, default=None, help="Maximum radius for polar plot (m/s). If not specified, auto-computed from data.")
 

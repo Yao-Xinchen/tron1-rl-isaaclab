@@ -185,11 +185,11 @@ def create_comparison_plot(baseline_dir, ours_dir, output_path=None, polar_radiu
 
 def main():
     parser = argparse.ArgumentParser(description="Compare velocity tracking experiments from two branches.")
-    parser.add_argument("--baseline_dir", type=str, default="experiments/twist/20251015_132427",
+    parser.add_argument("--baseline_dir", type=str, default="experiments/velocity_polar/twist/20251015_132427",
                        help="Path to baseline (twist rewarded) experiment directory")
-    parser.add_argument("--ours_dir", type=str, default="experiments/pose/20251015_135047",
+    parser.add_argument("--ours_dir", type=str, default="experiments/velocity_polar/pose/20251015_135047",
                        help="Path to our (pose rewarded) experiment directory")
-    parser.add_argument("--output_path", type=str, default="experiments/comparison.png",
+    parser.add_argument("--output_path", type=str, default="experiments/velocity_polar/comparison.png",
                        help="Path to save comparison plot")
     parser.add_argument("--polar_radius", type=float, default=None,
                        help="Maximum radius for polar plots (m/s). If not specified, auto-computed from data.")
