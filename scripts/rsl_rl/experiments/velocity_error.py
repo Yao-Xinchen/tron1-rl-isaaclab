@@ -1,4 +1,4 @@
-"""Script to analyze position tracking error vs command velocity magnitude."""
+"""Script to analyze velocity tracking error vs command velocity magnitude."""
 
 """Launch Isaac Sim Simulator first."""
 
@@ -18,7 +18,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import cli_args  # isort: skip
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Analyze position tracking error vs velocity magnitude.")
+parser = argparse.ArgumentParser(description="Analyze velocity tracking error vs velocity magnitude.")
 parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations.")
 parser.add_argument("--num_envs", type=int, default=4096, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
@@ -29,8 +29,8 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 parser.add_argument("--warmup_steps", type=int, default=100, help="Number of warmup steps before data collection.")
 parser.add_argument("--collection_steps", type=int, default=500, help="Number of steps for data collection.")
 parser.add_argument("--dt", type=float, default=0.02, help="Simulation timestep in seconds.")
-parser.add_argument("--output_dir", type=str, default="experiments/position_error", help="Directory to save results.")
-parser.add_argument("--pos_range", type=float, default=1.0, help="Position command range in meters (symmetric).")
+parser.add_argument("--output_dir", type=str, default="experiments/velocity_error", help="Directory to save results.")
+parser.add_argument("--vel_range", type=float, default=1.0, help="Velocity command range in m/s (symmetric).")
 parser.add_argument("--num_bins", type=int, default=10, help="Number of bins for velocity binning.")
 
 # append RSL-RL cli arguments
@@ -51,6 +51,7 @@ from rsl_rl.runner import OnPolicyRunner
 
 from isaaclab.envs import ManagerBasedRLEnvCfg, DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.dict import print_dict
+from isaaclab.utils.math import quat_apply_inverse
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
@@ -59,21 +60,22 @@ import bipedal_locomotion  # noqa: F401
 from bipedal_locomotion.utils.wrappers.rsl_rl import RslRlPpoAlgorithmMlpCfg
 
 
-def sample_velocity_commands(num_envs, device):
+def sample_velocity_commands(num_envs, vel_range, device):
     """Sample velocity commands with magnitude-based sampling.
 
     Args:
         num_envs: Number of environments
+        vel_range: Maximum velocity magnitude in m/s
         device: Torch device
 
     Returns:
         vel_commands: Tensor of shape (num_envs, 3) with [vel_x, vel_y, vel_yaw]
         vel_magnitudes: Tensor of shape (num_envs,) with 2D velocity magnitudes
     """
-    # Sample velocity magnitude uniformly from [0, 1] m/s
-    vel_magnitudes = torch.rand(num_envs, device=device)
+    # Sample velocity magnitude uniformly from [0, vel_range] m/s
+    vel_magnitudes = torch.rand(num_envs, device=device) * vel_range
 
-    # Sample random direction uniformly from [0, 2�]
+    # Sample random direction uniformly from [0, 2pi]
     angles = torch.rand(num_envs, device=device) * 2 * np.pi
 
     # Convert to vel_x, vel_y
@@ -88,63 +90,60 @@ def sample_velocity_commands(num_envs, device):
     return vel_commands, vel_magnitudes
 
 
-def override_command_ranges_and_assign_velocities(env, vel_commands):
-    """Override command ranges and assign specific velocities to each robot.
+def override_velocity_commands(env, vel_commands):
+    """Override pose commands to achieve velocity control for each robot.
+
+    Sets target pose to robot's current pose (zero relative distance)
+    and sets velocity command in the command frame.
 
     Args:
         env: The wrapped environment
         vel_commands: Tensor of shape (num_envs, 3) with [vel_x, vel_y, vel_yaw]
     """
     command_term = env.unwrapped.command_manager._terms["base_pose"]
+    robot = env.unwrapped.scene["robot"]
 
-    # Set position ranges to [-pos_range, pos_range]
-    command_term.cfg.ranges.pos_x = (-args_cli.pos_range, args_cli.pos_range)
-    command_term.cfg.ranges.pos_y = (-args_cli.pos_range, args_cli.pos_range)
+    # Set target pose to robot's current pose (zero relative distance)
+    command_term.pose_command_w[:, :3] = robot.data.root_link_pos_w.clone()
+    command_term.pose_command_w[:, 3:] = robot.data.root_link_quat_w.clone()
 
-    # Set velocity ranges (we'll override these individually per robot)
-    if hasattr(command_term.cfg.ranges, 'vel_x'):
-        # Assign specific velocities to each robot
-        command_term.pose_command_vel_c[:, 0] = vel_commands[:, 0]  # vel_x
-        command_term.pose_command_vel_c[:, 1] = vel_commands[:, 1]  # vel_y
-        command_term.pose_command_vel_c[:, 2] = vel_commands[:, 2]  # vel_yaw
-
-        print(f"[INFO] Assigned velocity commands to {len(vel_commands)} robots")
-        print(f"  Velocity magnitude range: [{vel_commands[:, :2].norm(dim=1).min():.3f}, {vel_commands[:, :2].norm(dim=1).max():.3f}] m/s")
-        print(f"  Velocity yaw range: [{vel_commands[:, 2].min():.3f}, {vel_commands[:, 2].max():.3f}] rad/s")
-    else:
-        print(f"[WARNING] Velocity commands not supported in this environment configuration")
-
-    print(f"[INFO] Command ranges overridden:")
-    print(f"  Position XY: [{-args_cli.pos_range}, {args_cli.pos_range}] m")
+    # Set velocity commands in command frame (body frame when pose is at robot)
+    command_term.pose_command_vel_c[:, 0] = vel_commands[:, 0]
+    command_term.pose_command_vel_c[:, 1] = vel_commands[:, 1]
+    command_term.pose_command_vel_c[:, 2] = vel_commands[:, 2]
 
 
-def get_real_position_error(env):
-    """Calculate position error using real robot position (not from command metrics).
+def calculate_velocity_error(env, target_vel_commands):
+    """Calculate velocity tracking error in body frame for all environments.
 
     Args:
         env: The wrapped environment
+        target_vel_commands: Tensor of shape (num_envs, 3) with [vel_x, vel_y, vel_yaw]
 
     Returns:
-        position_error: Tensor of shape (num_envs,) with L2 position error in XY plane
+        error: Tensor of shape (num_envs,) with L2 velocity error magnitude
     """
-    command_term = env.unwrapped.command_manager.get_term("base_pose")
-
-    # Get real robot position
     robot = env.unwrapped.scene["robot"]
-    real_pos = robot.data.root_link_pos_w  # (num_envs, 3)
 
-    # Get target position
-    target_pos = command_term.pose_command_w[:, :3]  # (num_envs, 3)
+    # Get actual velocity in world frame and robot orientation
+    actual_vel_w = robot.data.root_vel_w  # Shape: (num_envs, 6) - [vx, vy, vz, wx, wy, wz]
+    root_quat_w = robot.data.root_quat_w  # Shape: (num_envs, 4) - [w, x, y, z]
 
-    # Calculate XY position error
-    pos_error = target_pos[:, :2] - real_pos[:, :2]  # (num_envs, 2)
-    position_error = torch.norm(pos_error, dim=-1)  # (num_envs,)
+    # Transform linear velocity from world to body frame
+    actual_lin_vel_b = quat_apply_inverse(root_quat_w, actual_vel_w[:, :3])
 
-    return position_error
+    # Extract linear velocities (x, y) in body frame
+    actual_linear = actual_lin_vel_b[:, :2]
+    target_linear = target_vel_commands[:, :2]
+
+    # Calculate L2 error
+    error = torch.norm(actual_linear - target_linear, dim=1)
+
+    return error
 
 
 def run_experiment():
-    """Run the position error vs velocity experiment."""
+    """Run the velocity error vs velocity magnitude experiment."""
 
     # Parse configuration
     env_cfg: ManagerBasedRLEnvCfg = parse_env_cfg(
@@ -183,10 +182,15 @@ def run_experiment():
 
     # Sample velocity commands for each robot
     print(f"\n[INFO] Sampling velocity commands...")
-    vel_commands, vel_magnitudes = sample_velocity_commands(args_cli.num_envs, env.unwrapped.device)
+    vel_commands, vel_magnitudes = sample_velocity_commands(
+        args_cli.num_envs, args_cli.vel_range, env.unwrapped.device
+    )
 
-    # Override command ranges and assign velocities
-    override_command_ranges_and_assign_velocities(env, vel_commands)
+    print(f"[INFO] Assigned velocity commands to {len(vel_commands)} robots")
+    print(f"  Velocity magnitude range: [{vel_magnitudes.min():.3f}, {vel_magnitudes.max():.3f}] m/s")
+    print(f"  Velocity X range: [{vel_commands[:, 0].min():.3f}, {vel_commands[:, 0].max():.3f}] m/s")
+    print(f"  Velocity Y range: [{vel_commands[:, 1].min():.3f}, {vel_commands[:, 1].max():.3f}] m/s")
+    print(f"  Velocity yaw range: [{vel_commands[:, 2].min():.3f}, {vel_commands[:, 2].max():.3f}] rad/s")
 
     # Load previously trained model
     print(f"[INFO] Loading model checkpoint from: {resume_path}")
@@ -218,6 +222,9 @@ def run_experiment():
 
     # Run simulation
     for step in range(total_steps):
+        # Override velocity commands at each step to maintain velocity control
+        override_velocity_commands(env, vel_commands)
+
         # Run policy inference
         with torch.inference_mode():
             # Agent stepping
@@ -230,27 +237,30 @@ def run_experiment():
             critic_obs = infos["observations"].get("critic")
             commands_obs = infos["observations"].get("commands")
 
+        # Override velocity commands again after step
+        override_velocity_commands(env, vel_commands)
+
         # Start recording after warmup
         if step >= args_cli.warmup_steps:
-            # Get position error using real robot position
-            position_errors = get_real_position_error(env)
+            # Get velocity error using real robot velocity
+            velocity_errors = calculate_velocity_error(env, vel_commands)
 
             # Accumulate errors
-            error_sum += position_errors
+            error_sum += velocity_errors
             error_count += 1
 
             # Print progress
             if (step - args_cli.warmup_steps) % 50 == 0:
                 print(f"  Collection step {step - args_cli.warmup_steps}/{args_cli.collection_steps}, "
-                      f"mean position error: {position_errors.mean().item():.4f} m")
+                      f"mean velocity error: {velocity_errors.mean().item():.4f} m/s")
 
     # Calculate average tracking error per robot
     avg_tracking_errors = error_sum / error_count
 
     print(f"\n[INFO] Data collection complete!")
     print(f"  Collection steps: {error_count}")
-    print(f"  Overall mean tracking error: {avg_tracking_errors.mean().item():.4f} m")
-    print(f"  Overall std tracking error: {avg_tracking_errors.std().item():.4f} m")
+    print(f"  Overall mean tracking error: {avg_tracking_errors.mean().item():.4f} m/s")
+    print(f"  Overall std tracking error: {avg_tracking_errors.std().item():.4f} m/s")
 
     # Move data to CPU for processing
     vel_magnitudes_cpu = vel_magnitudes.cpu().numpy()
@@ -271,7 +281,7 @@ def run_experiment():
 
 
 def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
-    """Create visualizations for velocity vs tracking error.
+    """Create visualizations for velocity magnitude vs tracking error.
 
     Args:
         vel_magnitudes: Array of shape (num_envs,) with velocity magnitudes
@@ -285,9 +295,9 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
 
     # Plot 1: Scatter plot
     scatter = ax1.scatter(vel_magnitudes, avg_errors, alpha=0.3, s=10, c=vel_magnitudes, cmap='viridis')
-    ax1.set_xlabel('Velocity Magnitude (m/s)', fontsize=12)
-    ax1.set_ylabel('Average Position Tracking Error (m)', fontsize=12)
-    ax1.set_title('Position Tracking Error vs Command Velocity Magnitude', fontsize=13)
+    ax1.set_xlabel('Command Velocity Magnitude (m/s)', fontsize=12)
+    ax1.set_ylabel('Average Velocity Tracking Error (m/s)', fontsize=12)
+    ax1.set_title('Velocity Tracking Error vs Command Velocity Magnitude', fontsize=13)
     ax1.grid(True, alpha=0.3)
 
     # Add colorbar
@@ -304,7 +314,7 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
 
     # Plot 2: Binned violin plot
     num_bins = args_cli.num_bins
-    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_edges = np.linspace(0, args_cli.vel_range, num_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     # Collect data for each bin
@@ -339,10 +349,10 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
         parts['cmeans'].set_color('red')
         parts['cmeans'].set_linewidth(2)
 
-    ax2.set_xlabel('Velocity Magnitude (m/s)', fontsize=12)
-    ax2.set_ylabel('Average Position Tracking Error (m)', fontsize=12)
+    ax2.set_xlabel('Command Velocity Magnitude (m/s)', fontsize=12)
+    ax2.set_ylabel('Average Velocity Tracking Error (m/s)', fontsize=12)
     ax2.set_title(f'Distribution of Tracking Error (n={num_bins} bins)', fontsize=13)
-    ax2.set_xlim(-0.05, 1.05)
+    ax2.set_xlim(-0.05 * args_cli.vel_range, args_cli.vel_range * 1.05)
     ax2.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
@@ -367,7 +377,7 @@ def save_data(vel_magnitudes, vel_commands, avg_errors, output_dir):
     import csv
 
     # Save detailed data
-    csv_path = output_dir / 'position_error_data.csv'
+    csv_path = output_dir / 'velocity_error_data.csv'
 
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -390,7 +400,7 @@ def save_data(vel_magnitudes, vel_commands, avg_errors, output_dir):
 
     # Calculate binned statistics
     num_bins = args_cli.num_bins
-    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_edges = np.linspace(0, args_cli.vel_range, num_bins + 1)
     bin_stats = []
 
     for i in range(num_bins):
@@ -412,25 +422,25 @@ def save_data(vel_magnitudes, vel_commands, avg_errors, output_dir):
     summary_path = output_dir / 'summary_statistics.txt'
 
     with open(summary_path, 'w') as f:
-        f.write("POSITION ERROR VS VELOCITY EXPERIMENT SUMMARY\n")
+        f.write("VELOCITY ERROR VS VELOCITY MAGNITUDE EXPERIMENT SUMMARY\n")
         f.write("=" * 70 + "\n\n")
         f.write(f"Number of robots:           {len(vel_magnitudes)}\n")
         f.write(f"Warmup steps:               {args_cli.warmup_steps}\n")
         f.write(f"Collection steps:           {args_cli.collection_steps}\n")
         f.write(f"Timestep:                   {args_cli.dt} s\n\n")
 
-        f.write("VELOCITY STATISTICS\n")
+        f.write("VELOCITY COMMAND STATISTICS\n")
         f.write("-" * 70 + "\n")
-        f.write(f"Velocity magnitude range:   [0.0, 1.0] m/s\n")
+        f.write(f"Velocity magnitude range:   [0.0, {args_cli.vel_range}] m/s\n")
         f.write(f"Mean velocity magnitude:    {vel_magnitudes.mean():.4f} m/s\n")
         f.write(f"Std velocity magnitude:     {vel_magnitudes.std():.4f} m/s\n\n")
 
-        f.write("TRACKING ERROR STATISTICS\n")
+        f.write("VELOCITY TRACKING ERROR STATISTICS\n")
         f.write("-" * 70 + "\n")
-        f.write(f"Mean tracking error:        {avg_errors.mean():.6f} m\n")
-        f.write(f"Std tracking error:         {avg_errors.std():.6f} m\n")
-        f.write(f"Min tracking error:         {avg_errors.min():.6f} m\n")
-        f.write(f"Max tracking error:         {avg_errors.max():.6f} m\n\n")
+        f.write(f"Mean tracking error:        {avg_errors.mean():.6f} m/s\n")
+        f.write(f"Std tracking error:         {avg_errors.std():.6f} m/s\n")
+        f.write(f"Min tracking error:         {avg_errors.min():.6f} m/s\n")
+        f.write(f"Max tracking error:         {avg_errors.max():.6f} m/s\n\n")
 
         f.write("CORRELATION ANALYSIS\n")
         f.write("-" * 70 + "\n")
@@ -443,10 +453,10 @@ def save_data(vel_magnitudes, vel_commands, avg_errors, output_dir):
         for i, stats in enumerate(bin_stats):
             f.write(f"Bin {i+1}: Velocity {stats['range']} m/s\n")
             f.write(f"  Count:      {stats['count']}\n")
-            f.write(f"  Mean error: {stats['mean']:.6f} m\n")
-            f.write(f"  Std error:  {stats['std']:.6f} m\n")
-            f.write(f"  Min error:  {stats['min']:.6f} m\n")
-            f.write(f"  Max error:  {stats['max']:.6f} m\n\n")
+            f.write(f"  Mean error: {stats['mean']:.6f} m/s\n")
+            f.write(f"  Std error:  {stats['std']:.6f} m/s\n")
+            f.write(f"  Min error:  {stats['min']:.6f} m/s\n")
+            f.write(f"  Max error:  {stats['max']:.6f} m/s\n\n")
 
     print(f"  Saved summary statistics to: {summary_path}")
 
