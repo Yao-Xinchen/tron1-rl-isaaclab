@@ -29,8 +29,9 @@ parser.add_argument("--checkpoint_path", type=str, default=None, help="Relative 
 parser.add_argument("--warmup_steps", type=int, default=200, help="Number of warmup steps before data collection.")
 parser.add_argument("--collection_steps", type=int, default=600, help="Number of steps for data collection.")
 parser.add_argument("--num_angle_bins", type=int, default=128, help="Number of angular bins for analysis.")
-parser.add_argument("--output_dir", type=str, default="experiments/tracking_error/twist", help="Directory to save results.")
+parser.add_argument("--output_dir", type=str, default="experiments/velocity_polar/twist", help="Directory to save results.")
 parser.add_argument("--velocity_magnitude", type=float, default=1.0, help="Magnitude of velocity commands on the circle.")
+parser.add_argument("--polar_radius", type=float, default=None, help="Maximum radius for polar plot (m/s). If not specified, auto-computed from data.")
 
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
@@ -253,7 +254,8 @@ def run_experiment():
         command_angles_np,
         commands_np,
         output_dir,
-        args_cli.num_angle_bins
+        args_cli.num_angle_bins,
+        args_cli.polar_radius
     )
 
     # Save raw data
@@ -265,7 +267,7 @@ def run_experiment():
     env.close()
 
 
-def analyze_and_visualize(errors, angles, commands, output_dir, num_bins):
+def analyze_and_visualize(errors, angles, commands, output_dir, num_bins, polar_radius=None):
     """Analyze data and create visualizations.
 
     Args:
@@ -274,11 +276,15 @@ def analyze_and_visualize(errors, angles, commands, output_dir, num_bins):
         commands: Array of shape (num_envs, 3) with command velocities
         output_dir: Path to save figures
         num_bins: Number of angular bins for analysis
+        polar_radius: Maximum radius for polar plot (m/s). If None, auto-computed from data
     """
 
     # Calculate percentile-based limits for better visualization
-    error_95th = np.percentile(errors, 95)
-    error_max_display = min(error_95th * 1.2, 2.0)  # Cap at 2.0 m/s for readability
+    if polar_radius is not None:
+        error_max_display = polar_radius
+    else:
+        error_95th = np.percentile(errors, 95)
+        error_max_display = min(error_95th * 1.2, 2.0)  # Cap at 2.0 m/s for readability
 
     # Create figure with subplots
     fig = plt.figure(figsize=(16, 10))
@@ -419,7 +425,7 @@ def analyze_and_visualize(errors, angles, commands, output_dir, num_bins):
     ax.set_title(f'Velocity Tracking Error by Command Direction\n(showing {display_mask.sum()}/{len(errors)} robots with errors ≤ {error_max_display:.2f} m/s)',
                 fontsize=13, pad=20)
     ax.set_ylabel('Error (m/s)', labelpad=40)
-    plt.colorbar(scatter, ax=ax, label='Error (m/s)', pad=0.1)
+    # plt.colorbar(scatter, ax=ax, label='Error (m/s)', pad=0.1)
 
     # Calculate directional mean and median using angular bins
     polar_bins = 72  # Higher resolution for smoother curves
