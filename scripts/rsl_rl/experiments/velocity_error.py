@@ -358,7 +358,7 @@ def visualize_results(vel_magnitudes, vel_commands, avg_errors, output_dir):
     plt.tight_layout()
 
     # Save figure
-    output_path = output_dir / 'position_error.png'
+    output_path = output_dir / 'velocity_error.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"  Saved visualization to: {output_path}")
 

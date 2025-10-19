@@ -365,7 +365,7 @@ def visualize_results(angular_vel_magnitudes, vel_commands, avg_errors, output_d
     plt.tight_layout()
 
     # Save figure
-    output_path = output_dir / 'angular_velocity_vs_error.png'
+    output_path = output_dir / 'angular_velocity_error.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"  Saved visualization to: {output_path}")
 
