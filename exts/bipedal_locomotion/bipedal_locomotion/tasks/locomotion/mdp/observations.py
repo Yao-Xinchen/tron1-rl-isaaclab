@@ -185,18 +185,13 @@ def base_commands_b(
     env: ManagerBasedRLEnv,
 ):
     target_pose_b = env.command_manager.get_command("base_pose")
-
-    target_dist = torch.norm(target_pose_b[:, :2], dim=-1, keepdim=True)
-    target_direction = target_pose_b[:, :2] / target_dist
-    target_dist_scaled = .5 * torch.log(1. + 3. * target_dist)
-
+    target_pose_xy = target_pose_b[:, :2]
     target_orientation = math_utils.matrix_from_quat(math_utils.quat_unique(target_pose_b[:, 3:7]))
     target_orientation_x = target_orientation[:, :, 0]
 
     return torch.cat(
         [
-            target_dist_scaled,
-            target_direction,
+            target_pose_xy,
             target_orientation_x[:, :2],
         ], dim=-1
     )
@@ -204,15 +199,13 @@ def base_commands_b(
 def fake_base_commands_b(
     env: ManagerBasedRLEnv,
 ):
-    target_dist_scaled = torch.zeros((env.num_envs, 1), device=env.device)
-    target_direction = torch.zeros((env.num_envs, 2), device=env.device)
+    target_pose_xy = torch.zeros((env.num_envs, 2), device=env.device)
     target_orientation_x = torch.zeros((env.num_envs, 2), device=env.device)
     target_orientation_x[:, 0] = 1.0
 
     return torch.cat(
         [
-            target_dist_scaled,
-            target_direction,
+            target_pose_xy,
             target_orientation_x,
         ], dim=-1
     )
