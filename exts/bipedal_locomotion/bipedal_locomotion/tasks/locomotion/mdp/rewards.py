@@ -714,7 +714,7 @@ def track_base_position_exp(
     normal = torch.exp(-position_error / std ** 2)
     micro_enhancement = torch.exp(-5 * position_error / std ** 2)
 
-    return (normal + micro_enhancement) * 0.5 * env._mani_safety_scale
+    return (normal + micro_enhancement) * 0.5 * env._loco_safety_scale
 
 def track_base_orientation_exp(
     env: ManagerBasedRLEnv,
@@ -732,7 +732,7 @@ def track_base_orientation_exp(
 
     micro_enhancement = torch.exp(-5 * base_orientation_error / std ** 2)
 
-    return (normal + micro_enhancement) * position_scale * 0.5  * env._mani_safety_scale
+    return (normal + micro_enhancement) * position_scale * 0.5  * env._loco_safety_scale
 
 def track_base_pb(env: ManagerBasedRLEnv, command_name: str = "base_pose") -> torch.Tensor:
     optim_pos_distance = env.command_manager.get_term(command_name).optim_pos_distance

@@ -291,17 +291,6 @@ class EventsCfg:
             "num_buckets": 48,
         },
     )
-    # robot_joint_stiffness_and_damping = EventTerm(
-    #     func=mdp.randomize_actuator_gains,
-    #     mode="startup",
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-    #         "stiffness_distribution_params": (32, 48),
-    #         "damping_distribution_params": (2.0, 3.0),
-    #         "operation": "abs",
-    #         "distribution": "uniform",
-    #     },
-    # )
     robot_center_of_mass = EventTerm(
         func=mdp.randomize_rigid_body_coms,
         mode="startup",
@@ -428,8 +417,8 @@ class RewardsCfg:
                 "hip_R_Joint": 0.2,
                 "knee_R_Joint": 0.2,
                 # "foot_R_Joint": 0.2,
-                "wheel_L_Joint": 3.0,
-                "wheel_R_Joint": 3.0,
+                "wheel_L_Joint": 8.0,
+                "wheel_R_Joint": 8.0,
             }
         },
     )
@@ -447,8 +436,8 @@ class RewardsCfg:
                 "hip_R_Joint": 1.0,
                 "knee_R_Joint": 1.0,
                 # "foot_R_Joint": 1.0,
-                "wheel_L_Joint": 1.0,
-                "wheel_R_Joint": 1.0,
+                "wheel_L_Joint": 2.0,
+                "wheel_R_Joint": 2.0,
             }
         },
     )
@@ -457,7 +446,7 @@ class RewardsCfg:
     #     func=mdp.joint_acc_l2, weight=-2.0e-7, params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*")}
     # )
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.002)
-    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.001)
+    action_smoothness = RewTerm(func=mdp.action_smoothness_penalty, weight=-0.006)
     # -- optional penalties
     dof_vel_wheel_l2 = RewTerm(
         func=mdp.joint_vel_l2, weight=-0.0005, params={"asset_cfg": SceneEntityCfg("robot", joint_names="wheel_.+")}

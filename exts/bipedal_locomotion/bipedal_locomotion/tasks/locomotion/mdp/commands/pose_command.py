@@ -55,12 +55,6 @@ def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
     )
     return o.reshape(quaternions.shape[:-1] + (3, 3))
 
-
-def generate_sigmoid_scale(mu: float, decay_length: float, x: torch.Tensor):
-    sigmoid_z = 5 / decay_length * (x - mu)
-    return torch.sigmoid(sigmoid_z)
-
-
 def compute_rotation_distance(input_quat, target_quat):
     Ee_target_R = quaternion_to_matrix(target_quat)
     Ee_R = quaternion_to_matrix(input_quat)
@@ -81,9 +75,8 @@ class UniformWorldPoseCommand(UniformPoseCommand):
     def __init__(self, cfg: UniformWorldPoseCommandCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
         self.decrease_vel = torch.zeros(self.num_envs, device=self.device)
-        self.se3_distance_ref = torch.ones(self.num_envs, device=self.device) * 5.0
+        self.se3_distance_ref = torch.ones(self.num_envs, device=self.device)
         self.decrease_vel_range = cfg.se3_decrease_vel_range
-        self._env._loco_mani_scale = torch.ones(self.num_envs, device=self.device)  # type: ignore
         self.resampling_time_scale = cfg.resampling_time_scale
         self.resample_time_range = cfg.resampling_time_range
 
@@ -118,8 +111,6 @@ class UniformWorldPoseCommand(UniformPoseCommand):
         self.orient_improvement = (self.optim_orient_distance - self.metrics["orientation_error"]).clip(min=0.0)
         self.optim_pos_distance[:] = torch.minimum(self.metrics["position_error"], self.optim_pos_distance)
         self.optim_orient_distance[:] = torch.minimum(self.metrics["orientation_error"], self.optim_orient_distance)
-        self._env._loco_mani_scale = generate_sigmoid_scale(mu=1.0, decay_length=1.0,
-                                                            x=self.se3_distance_ref)  # type: ignore
 
     def _update_se3_ref(self, env_ids: Sequence[int]):
         self.pose_command_b[:, :3] = quat_apply_inverse(

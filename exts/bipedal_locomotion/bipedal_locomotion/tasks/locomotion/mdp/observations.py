@@ -215,11 +215,6 @@ def base_se3_decrease_rate(env: ManagerBasedRLEnv) -> torch.Tensor:
     return base_pose_command.decrease_vel.unsqueeze(-1)
 
 def base_commands_vel_c(env: ManagerBasedRLEnv) -> torch.Tensor:
-    """Velocity commands in command pose's frame from the base_pose command term.
-
-    Returns:
-        torch.Tensor: Velocity commands [vel_x, vel_y, vel_yaw] in body frame. Shape: (num_envs, 3).
-    """
     base_pose_command = env.command_manager.get_term("base_pose")
     return base_pose_command.pose_command_vel_c
 
