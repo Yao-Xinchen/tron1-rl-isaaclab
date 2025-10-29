@@ -58,6 +58,7 @@ class PPO:
         device='cpu',
         num_proprio_encoder_substeps = 1,
         student_reinforcing = False,
+        grad_penalty_coef_schedule=[0.002, 0.002, 0, 1],
         **kwargs,
     ):
         if kwargs:
@@ -115,6 +116,8 @@ class PPO:
         self.lam = lam
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
+        self.grad_penalty_coef_schedule = grad_penalty_coef_schedule
+        self.counter = 0
 
     def init_storage(
         self,
@@ -181,7 +184,13 @@ class PPO:
     def update(self):
         mean_value_loss = 0
         mean_surrogate_loss = 0
+        mean_gradient_penalty = 0
         mean_proprio_extra_loss = 0
+
+        # Compute gradient penalty coefficient based on schedule
+        gradient_stage = min(max((self.counter - self.grad_penalty_coef_schedule[2]), 0) / self.grad_penalty_coef_schedule[3], 1)
+        gradient_penalty_coef = gradient_stage * (self.grad_penalty_coef_schedule[1] - self.grad_penalty_coef_schedule[0]) + self.grad_penalty_coef_schedule[0]
+
         if self.actor_critic.is_recurrent:
             generator = self.storage.reccurent_mini_batch_generator(
                 self.num_mini_batches, self.num_learning_epochs)
@@ -203,10 +212,14 @@ class PPO:
             hid_states_batch,
             masks_batch
         ) in generator:
+            # Clone observations for gradient penalty computation
+            obs_est_batch = obs_batch.clone()
+            obs_est_batch.requires_grad_(True)
+
             if not self.student_reinforcing:
-                self.actor_critic.act(obs_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                self.actor_critic.act(obs_est_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
             else:
-                self.actor_critic.act_student_reinforcing(obs_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+                self.actor_critic.act_student_reinforcing(obs_est_batch, obs_history_batch, critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
             actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
             value_batch = self.actor_critic.evaluate(critic_obs_batch, commands_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
             mu_batch = self.actor_critic.action_mean
@@ -257,8 +270,20 @@ class PPO:
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
 
-            loss = surrogate_loss + self.value_loss_coef * \
-                value_loss - self.entropy_coef * entropy_batch.mean()
+            # Lipschitz gradient penalty
+            grad_log_prob = torch.autograd.grad(
+                outputs=actions_log_prob_batch.sum(),
+                inputs=obs_est_batch,
+                create_graph=True
+            )[0]
+            gradient_penalty = torch.sum(torch.square(grad_log_prob), dim=-1).mean()
+
+            loss = (
+                    surrogate_loss
+                    + self.value_loss_coef * value_loss
+                    - self.entropy_coef * entropy_batch.mean()
+                    + gradient_penalty_coef * gradient_penalty
+            )
 
             # Gradient step
             self.optimizer.zero_grad()
@@ -269,6 +294,7 @@ class PPO:
 
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
+            mean_gradient_penalty += gradient_penalty.item()
 
             # extra gradient step for the proprioperceptive encoder training
             if not self.student_reinforcing:
@@ -280,17 +306,22 @@ class PPO:
                     self.extra_optimizer.zero_grad()
                     proprio_extra_loss.backward()
                     nn.utils.clip_grad_norm_(
-                        self.actor_critic.parameters(), self.max_grad_norm)       
+                        self.actor_critic.parameters(), self.max_grad_norm)
                     self.extra_optimizer.step()
-                    
+
                     mean_proprio_extra_loss += proprio_extra_loss.item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
+        mean_gradient_penalty /= num_updates
         num_updates_extra = self.num_learning_epochs * self.num_mini_batches * self.num_proprio_encoder_substeps
         if num_updates_extra > 0:
-            mean_proprio_extra_loss /= num_updates_extra 
+            mean_proprio_extra_loss /= num_updates_extra
         self.storage.clear()
+        self.update_counter()
 
-        return mean_value_loss, mean_surrogate_loss, mean_proprio_extra_loss
+        return mean_value_loss, mean_surrogate_loss, mean_gradient_penalty, gradient_penalty_coef, mean_proprio_extra_loss
+
+    def update_counter(self):
+        self.counter += 1
