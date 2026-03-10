@@ -50,11 +50,11 @@ class OnPolicyRunner:
         self.device = device
         self.env = env
 
-        obs, extras = self.env.get_observations()
-        self.num_obs = obs.shape[1]
-        self.num_cmds = extras["observations"]["commands"].shape[1]
-        self.num_obs_history = extras["observations"]["obsHistory"].flatten(start_dim=1).shape[1]
-        self.num_critic_obs = extras["observations"]["critic"].shape[1]
+        obs_dict = self.env.get_observations()
+        self.num_obs = obs_dict["policy"].shape[1]
+        self.num_cmds = obs_dict["commands"].shape[1]
+        self.num_obs_history = obs_dict["obsHistory"].flatten(start_dim=1).shape[1]
+        self.num_critic_obs = obs_dict["critic"].shape[1]
         actor_critic_class = ActorCritic
         actor_critic: ActorCritic = actor_critic_class(
             self.num_obs,
@@ -99,11 +99,12 @@ class OnPolicyRunner:
             self.env.episode_length_buf = torch.randint_like(
                 self.env.episode_length_buf, high=int(
                     self.env.max_episode_length))
-        obs, extras = self.env.get_observations()
-        obs_history = extras["observations"].get("obsHistory")
+        obs_dict = self.env.get_observations()
+        obs = obs_dict["policy"]
+        obs_history = obs_dict.get("obsHistory")
         obs_history = obs_history.flatten(start_dim=1)
-        critic_obs = extras["observations"].get("critic")
-        commands = extras["observations"].get("commands")
+        critic_obs = obs_dict.get("critic")
+        commands = obs_dict.get("commands")
         obs, obs_history, critic_obs, commands = obs.to(self.device), obs_history.to(self.device), critic_obs.to(self.device), commands.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
@@ -170,10 +171,11 @@ class OnPolicyRunner:
                     # Copy healthy environment's actions to NaN environments
                     if nan_mask.any():
                         actions[nan_mask] = actions[healthy_idx].clone()
-                    (obs, rewards, dones, infos) = self.env.step(actions)
-                    critic_obs = infos["observations"]["critic"]
-                    obs_history = infos["observations"]["obsHistory"].flatten(start_dim=1)
-                    commands = infos["observations"]["commands"]
+                    (obs_dict, rewards, dones, infos) = self.env.step(actions)
+                    obs = obs_dict["policy"]
+                    critic_obs = obs_dict["critic"]
+                    obs_history = obs_dict["obsHistory"].flatten(start_dim=1)
+                    commands = obs_dict["commands"]
 
                     obs, obs_history, critic_obs, commands, rewards, dones = (
                         obs.to(self.device),
