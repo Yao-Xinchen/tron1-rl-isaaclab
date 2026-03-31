@@ -45,5 +45,5 @@ python scripts/rsl_rl/train.py --task Isaac-Limx-WF-Blind-Flat-v0 --num_envs 204
 ### Playing
 
 ```sh
-python scripts/rsl_rl/play.py --task Isaac-Limx-WF-Blind-Flat-v0
+python scripts/rsl_rl/play.py --task Isaac-Limx-WF-Blind-Flat-v0 --num_envs 32
 ```

@@ -121,11 +121,12 @@ def main():
     student_policy = ppo_runner.get_inference_policy_student(device=env.unwrapped.device)
 
     # reset environment
-    obs, obs_dict = env.get_observations()
-    obs_history = obs_dict["observations"].get("obsHistory")
+    obs_dict = env.get_observations()
+    obs = obs_dict["policy"]
+    obs_history = obs_dict.get("obsHistory")
     obs_history = obs_history.flatten(start_dim=1)
-    critic_obs = obs_dict["observations"].get("critic")
-    commands = obs_dict["observations"].get("commands")
+    critic_obs = obs_dict.get("critic")
+    commands = obs_dict.get("commands")
 
     # simulate environment
     while simulation_app.is_running():
@@ -135,11 +136,12 @@ def main():
             actions = student_policy(obs, obs_history, commands)
             # actions = teacher_policy(obs, critic_obs, commands)
             # env stepping
-            obs, _, _, infos = env.step(actions)
-            obs_history = infos["observations"].get("obsHistory")
+            obs_dict, _, _, infos = env.step(actions)
+            obs = obs_dict["policy"]
+            obs_history = obs_dict.get("obsHistory")
             obs_history = obs_history.flatten(start_dim=1)
-            critic_obs = infos["observations"].get("critic")
-            commands = infos["observations"].get("commands")
+            critic_obs = obs_dict.get("critic")
+            commands = obs_dict.get("commands")
 
     # close the simulator
     env.close()
